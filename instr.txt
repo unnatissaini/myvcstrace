@@ -1,0 +1,140 @@
+| Module            | Description                                | Stack                            |
+| ----------------- | ------------------------------------------ | -------------------------------- |
+| Local CLI         | Snapshot, revert, push, pull, log          | Python                           |
+| Auth System       | Register, Login, JWT, permissions          | FastAPI + PostgreSQL + JWT       |
+| Remote Storage    | Store user commits and snapshots on server | PostgreSQL + File Storage (disk) |
+| Web UI (optional) | Browse commits, users, diffs               | HTML + JS + FastAPI              |
+| Deployment        | Expose FastAPI securely on server          | Uvicorn + Nginx + Gunicorn       |
+
+
+
+
+
+
+
+Use FastAPI's built-in support for:
+OAuth2 password flow
+JWT tokens
+passlib for hashing passwords
+
+pip install fastapi uvicorn python-jose passlib[bcrypt] psycopg2
+
+
+myvcs/
+├── server/
+│   ├── main.py (FastAPI entry)
+│   ├── models.py (SQLAlchemy models)
+│   ├── db.py (DB connection)
+│   ├── routes/
+│   │   ├── auth.py
+│   │   ├── repos.py
+│   │   └── vcs.py
+│   ├── utils/
+│   │   ├── hasher.py
+│   │   └── file_ops.py
+│   └── init_db.py
+├── cli/
+│   ├── vcs.py (init, commit, log, revert)
+├── storage/
+│   └── repos/
+└── requirements.txt
+
+
+
+
+ Auth Flow Summary:
+Register user (/register)
+
+Login (/token) → returns JWT
+
+Use token in headers for:
+
+/push
+
+/pull
+
+/log
+
+
+
+
+########python vcs.py init
+python vcs.py snapshot "Initial commit"
+python vcs.py snapshot "Added hello.py"
+python vcs.py log
+python vcs.py revert <hash>
+
+
+
+
+
+
+myvcs/
+├── server/
+│   ├── api/
+│   │   ├── deps.py               # Dependencies for routes (auth, DB session, etc.)
+│   │   ├── v1/                   # Versioned APIs
+│   │   │   ├── auth.py
+│   │   │   ├── repos.py
+│   │   │   └── vcs.py
+│   ├── core/
+│   │   ├── config.py             # Settings from env vars or config files
+│   │   └── security.py           # Auth (JWT, hashing)
+│   ├── crud/
+│   │   ├── users.py
+│   │   ├── repos.py
+│   │   └── commits.py
+│   ├── db/
+│   │   ├── base.py               # Base SQLAlchemy model
+│   │   ├── models/               # Model definitions
+│   │   │   ├── user.py
+│   │   │   ├── repository.py
+│   │   │   └── commit.py
+│   │   └── session.py            # DB engine and session
+│   ├── schemas/
+│   │   ├── user.py
+│   │   ├── repo.py
+│   │   └── commit.py
+│   ├── services/
+│   │   ├── vcs_logic.py          # Main VCS logic like diff, merge, etc.
+│   │   └── file_ops.py
+│   ├── main.py                   # FastAPI entry point
+│   └── init_db.py                # Table creation / seeding
+├── cli/
+│   ├── __init__.py
+│   └── vcs.py                    # CLI: init, commit, log, revert
+├── storage/
+│   └── repos/                    # Local storage for repo snapshots
+├── scripts/
+│   ├── create_tables.sql         # Optional manual DB init
+│   └── seed_data.sql             # Optional data seeding
+├── .env                          # Environment variables
+├── requirements.txt
+└── README.md
+
+
+myvcs/
+├── server/
+│   ├── main.py             # FastAPI entry point
+│   ├── db.py               # DB config (even if SQLite/local)
+│   ├── models.py           # SQLAlchemy models
+│   ├── init_db.py          # Create tables
+│   ├── api/
+│   │   ├── deps.py         # Dependency overrides
+│   │   ├── auth.py         # Auth routes
+│   │   ├── repos.py        # Repo handling
+│   │   └── vcs.py          # VCS logic (commit, revert, etc.)
+│   ├── core/
+│   │   ├── config.py       # App settings
+│   │   ├── security.py     # Hasher/token utils
+│   ├── services/
+│   │   └── user_service.py # Business logic (example)
+│
+├── cli/
+│   └── vcs.py              # Local CLI commands (init, commit, revert)
+│
+├── storage/
+│   └── repos/              # Local file storage (bare repos)
+│
+├── requirements.txt
+└── README.md

@@ -1,0 +1,92 @@
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  body, html {
+    width : 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #eee;
+  }
+  
+  .login-container {
+    width: 100%;
+    max-width: 600px;
+    height: 100%;
+    max-height: 400px;
+    padding: 2rem;
+  }
+  
+  .glassy-login-box {
+    width: 100%;
+    max-width: 500px;
+    height: 100%;
+    max-height: 400px;
+    padding: 3rem;
+    background: rgba(40, 45, 55, 0.5);
+    border-radius: 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 8px 32px 0 rgba(0, 0, 0, 0.4),
+      0 0 15px 2px rgba(130, 160, 210, 0.2);
+    border: 1px solid rgba(130, 160, 210, 0.3);
+    padding: 2rem;
+    color: #d1d9e6;
+  }
+  
+  .glassy-login-box h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #81a1c1;
+  }
+  
+  label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: 600;
+    color: #b0bdd9;
+  }
+  
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: none;
+    background: #1f2633;
+    color: #ddd;
+    font-size: 1rem;
+  }
+  
+  button[type="submit"] {
+    margin-top: 1.5rem;
+    width: 100%;
+    padding: 0.6rem;
+    background: #81a1c1;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #121619;
+    transition: background-color 0.3s ease;
+  }
+  
+  button[type="submit"]:hover {
+    background: #5c7a9e;
+  }
+  
+  .error-message {
+    margin-top: 1rem;
+    text-align: center;
+    color: #e57373;
+    font-weight: 600;
+  }
+  

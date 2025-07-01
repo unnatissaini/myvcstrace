@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dark Gradient Dashboard</title>
+  <style>
+    /* Reset */
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+
+    body, html {
+      height: 100%;
+      background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+      display: flex;
+      color: #eee;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 220px;
+      background: #121619;
+      display: flex;
+      flex-direction: column;
+      padding: 2rem 1rem;
+      gap: 1.5rem;
+      border-right: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .sidebar h2 {
+      font-weight: 700;
+      font-size: 1.5rem;
+      color: #81a1c1;
+      margin-bottom: 2rem;
+      user-select: none;
+    }
+
+    .nav-item {
+      cursor: pointer;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-size: 1.1rem;
+      transition: background-color 0.3s ease;
+      user-select: none;
+    }
+
+    .nav-item:hover,
+    .nav-item.active {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    /* Main content area */
+    .main-content {
+      flex-grow: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 2rem;
+    }
+
+    /* Glassy box */
+    .glassy-box {
+  width: 70%;
+  max-width: 900px;
+  min-height: 400px;
+  background: rgba(40, 45, 55, 0.5); /* lighter & more transparent */
+  border-radius: 20px;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow:
+    0 8px 32px 0 rgba(0, 0, 0, 0.4),
+    0 0 15px 2px rgba(130, 160, 210, 0.2); /* subtle blue glow */
+  border: 1px solid rgba(130, 160, 210, 0.3); /* subtle border */
+  padding: 2rem 3rem;
+  color: #d1d9e6;
+  overflow-y: auto;
+  transition: background 0.3s ease;
+}
+
+
+    /* Content inside glass box */
+    .content-title {
+      font-size: 2rem;
+      margin-bottom: 1rem;
+      color: #81a1c1;
+    }
+
+    .content-text {
+      font-size: 1.1rem;
+      line-height: 1.6;
+      color: #c0c7d8;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      body {
+        flex-direction: column;
+      }
+      .sidebar {
+        width: 100%;
+        flex-direction: row;
+        justify-content: space-around;
+        padding: 1rem 0;
+        border-right: none;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      .nav-item {
+        padding: 0.5rem 0.75rem;
+        font-size: 1rem;
+      }
+      .main-content {
+        padding: 1rem;
+      }
+      .glassy-box {
+        width: 95%;
+        min-height: 300px;
+        padding: 1.5rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>Dashboard</h2>
+    <div class="nav-item active" data-section="home">Home</div>
+    <div class="nav-item" data-section="report">Report</div>
+    <div class="nav-item" data-section="activity">Activity/History</div>
+  </nav>
+
+  <main class="main-content">
+    <section class="glassy-box" id="content-box">
+      <h3 class="content-title">Home</h3>
+      <p class="content-text">
+        Welcome to the dashboard home page! Here you can find an overview and quick access to all features.
+      </p>
+    </section>
+  </main>
+
+  <script>
+    const navItems = document.querySelectorAll('.nav-item');
+    const contentBox = document.getElementById('content-box');
+
+    const contentData = {
+      home: {
+        title: 'Home',
+        text: 'Welcome to the dashboard home page! Here you can find an overview and quick access to all features.'
+      },
+      report: {
+        title: 'Report',
+        text: 'This section displays detailed reports including statistics, charts, and analysis of your data.'
+      },
+      activity: {
+        title: 'Activity/History',
+        text: 'Review your recent activities and history logs here. Keep track of all your past interactions and changes.'
+      }
+    };
+
+    navItems.forEach(item => {
+      item.addEventListener('click', () => {
+        // Remove active class from all
+        navItems.forEach(i => i.classList.remove('active'));
+        // Add active to clicked
+        item.classList.add('active');
+
+        const section = item.getAttribute('data-section');
+        // Update content
+        contentBox.querySelector('.content-title').textContent = contentData[section].title;
+        contentBox.querySelector('.content-text').textContent = contentData[section].text;
+      });
+    });
+  </script>
+</body>
+</html>

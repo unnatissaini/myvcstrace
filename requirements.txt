@@ -1,0 +1,130 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+passlib
+python-multipart
+python-jose
+
+SELECT * FROM users;
+SELECT * FROM repositories;
+SELECT * FROM commits;
+SELECT * FROM snapshot;
+SELECT * FROM access_control;
+SELECT * FROM log;
+
+
+d:
+cd unnati\myvcs
+uvicorn server.main:app --reload
+
+
+####################check commit log
+curl http://127.0.0.1:8000/repositories/1/log
+
+
+
+1. 🔑 Get JWT Token
+
+ curl -X POST http://127.0.0.1:8000/auth/login ^
+  -H "Content-Type: application/json" ^
+  -d "{\"username\":\"a\", \"password\":\"a\"}"
+✅ Save the returned access_token.
+
+2. 📁 Create Repository
+curl -X POST http://127.0.0.1:8000/repositories/create ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwOTM3MTQ5fQ.FHx1w8Hj7v0aBvaa6BMSFECED0_GHGkZQIYcCdnNIEc" ^
+  -H "Content-Type: multipart/form-data" ^
+  -F "name=my-test-repo" ^
+  -F "is_private=false" ^
+
+
+  -F "file=@C:\myvcs\myvcs\requirements.txt"
+
+
+curl -X POST http://127.0.0.1:8000/repositories/create ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwOTM3MTQ5fQ.FHx1w8Hj7v0aBvaa6BMSFECED0_GHGkZQIYcCdnNIEc" ^
+  -F "name=mydemorepo" ^
+  -F "description=sample repo" ^
+  -F "is_private=false" ^
+  -F "file=@C:\myvcs\myvcs\requirements.txt;type=text/plain"
+
+3. 📤 Upload File to Repo
+
+
+curl -X POST http://127.0.0.1:8000/repositories/4/upload ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -F "file=@C:\myvcs\myvcs\requirements.txt;type=text/plain"
+
+
+4. 💾 Commit Changes
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs
+
+curl -X POST http://127.0.0.1:8000/repositories/4/commit ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -F "filename=instr.txt" ^
+  -F "message=Committing existing file instr.txt"
+
+
+Merge files
+curl -X POST http://127.0.0.1:8000/repositories/1/merge_versions ^
+  -H "Authorization: Bearer <your_token>" ^
+  -F "filename=main.py" ^
+  -F "version1_path=D:/VCS_Storage/user_1/repo_1/versions/main.py/abc123_main.py" ^
+  -F "version2_path=D:/VCS_Storage/user_1/repo_1/versions/main.py/xyz456_main.py"
+
+
+✅ 1. Commit with Snapshot
+
+curl -X POST http://127.0.0.1:8000/repositories/4/commit_with_snapshot ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/x-www-form-urlencoded" ^
+  -d "message=Initial commit with snapshot" ^
+  -d "filename=instr.txt"
+
+✅ 2. Commit without Snapshot
+curl -X POST http://127.0.0.1:8000/repositories/4/commit_without_snapshot ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/x-www-form-urlencoded" ^
+  -d "message=Commit without snapshot" ^
+  -d "filename=instr.txt"
+
+✅ 3. (Optional) If you went with a single route using the create_snapshot flag:
+
+curl -X POST http://127.0.0.1:8000/repositories/4/commit ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/x-www-form-urlencoded" ^
+  -d "message=Commit via unified route" ^
+  -d "filename=instr.txt" ^
+  -d "create_snapshot=false"
+
+snap to repo
+curl -X POST http://127.0.0.1:8000/repositories/6/snapshot_repo ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs"
+
+
+ View commit log for the repository
+
+curl -X GET http://127.0.0.1:8000/repositories/1/log ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs"
+✅ 4. Revert to a previous commit
+
+curl -X POST http://127.0.0.1:8000/repositories/4/revert/4 ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs"
+5. ❌ Delete a File (if implemented)
+
+
+curl -X DELETE http://127.0.0.1:8000/repositories/4 ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"file_path\": \"D:/VCS_Storage/user_{current_user.id}/repo_4\"}"
+curl -X DELETE http://127.0.0.1:8000/repositories/4/file ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"file_path\": \"D:/VCS_Storage/user_{current_user.id}/repo_4/requirements.txt\"}"
+
+6. Assign access control 
+curl -X POST http://127.0.0.1:8000/repositories/10/access-control ^
+  -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"user_id\": 3, \"role\": \"editor\"}"

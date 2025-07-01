@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block title %}Repository - {{ repo.name }}{% endblock %}
+
+{% block content %}
+<h2>{{ repo.name }}</h2>
+<p>Visibility: {{ repo.visibility }}</p>
+
+<h3>Files</h3>
+<ul>
+    {% for file in files %}
+        <li>{{ file.name }} <a href="/repositories/{{ repo.id }}/delete_file?file={{ file.name }}">[Delete]</a></li>
+    {% endfor %}
+</ul>
+
+<h3>Upload File</h3>
+<form action="/repositories/{{ repo.id }}/upload" method="post" enctype="multipart/form-data">
+    <input type="file" name="file">
+    <button type="submit">Upload</button>
+</form>
+
+<h3>Commits</h3>
+<ul>
+    {% for commit in commits %}
+        <li>{{ commit.message }} by {{ commit.user_id }} on {{ commit.timestamp }}</li>
+    {% endfor %}
+</ul>
+
+<h3>Create Commit</h3>
+<form action="/repositories/{{ repo.id }}/commit" method="post">
+    <label>Message:</label><br>
+    <input type="text" name="message"><br>
+    <label>Filename:</label><br>
+    <input type="text" name="filename"><br>
+    <button type="submit">Commit</button>
+</form>
+
+<h3>Create Full Snapshot</h3>
+<form action="/repositories/{{ repo.id }}/snapshot_repo" method="post">
+    <button type="submit">Create Full Snapshot</button>
+</form>
+{% endblock %}

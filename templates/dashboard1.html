@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>MyVCS - Dashboard</title>
+</head>
+<body>
+    <h3>Welcome, <span id="username"></span></h3>
+    <p id="user-id"></p>
+    <p id="repo-count"></p>
+
+    <h3>Your Repositories</h3>
+    <table id="repo-table">
+        <thead>
+            <tr>
+                <th>Name</th><th>Visibility</th><th>Created</th><th>Actions</th>
+            </tr>
+        </thead>
+        <tbody id="repo-table-body">
+            <!-- JS will add rows here -->
+        </tbody>
+    </table>
+    <h3>Accessible Repositories</h3>
+        <table id="accessible-repos">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Owner</th>
+              <th>Visibility</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody id="accessible-repos-body"></tbody>
+        </table>
+<div id="repos"></div>
+
+<!-- Upload Section -->
+<div id="upload-section" style="display: none;">
+    <h4>Upload File</h4>
+    <form id="upload-form">
+        <input type="file" id="file-upload" name="file" required>
+        <button type="submit">Upload</button>
+    </form>
+</div>
+
+<!-- Commit Section -->
+<div id="commit-section" style="display: none;">
+    <h4>Commit Changes</h4>
+    <form id="commit-form">
+        <input type="text" name="message" placeholder="Commit message" required>
+        <input type="text" name="filename" placeholder="File name" required>
+        <label><input type="checkbox" name="create_snapshot" checked> Create Snapshot</label>
+        <button type="submit">Commit</button>
+    </form>
+</div>
+<div id="access-section" style="display:none">
+    <h4>Add Collaborator</h4>
+    <form id="access-form">
+        <input name="user_id" placeholder="User ID" required>
+        <select name="role">
+            <option value="viewer">Viewer</option>
+            <option value="collaborator">Collaborator</option>
+            <option value="admin">Admin</option>
+        </select>
+        <button type="submit">Update</button>
+    </form>
+</div>
+    
+<h3>Create New Repository</h3>
+<form id="create-repo-form">
+    <label>Repository Name:</label>
+    <input type="text" name="name" required>
+    <label>Visibility:</label>
+    <select name="visibility">
+        <option value="public">Public</option>
+        <option value="private">Private</option>
+    </select>
+    <input type="file" name="file" required>
+    <button type="submit">Create</button>
+</form>
+
+
+    <h3>Recent Activity</h3>
+    <ul id="log-list"></ul>
+
+    <script>
+    
+document.addEventListener("DOMContentLoaded", () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+        window.location.href = "/login";
+        return;
+    }
+
+    fetch("/api/dashboard-data", {
+        headers: { "Authorization": `Bearer ${token}` }
+    })
+    .then(async res => {
+        if (!res.ok) {
+            localStorage.removeItem("token");
+            window.location.href = "/login";
+            return;
+        }
+
+        const data = await res.json();
+
+        // Fill user info
+        document.getElementById("username").innerText = data.user.username;
+        document.getElementById("user-id").innerText = `User ID: ${data.user.id}`;
+        document.getElementById("repo-count").innerText = `Total Repositories: ${data.repos.length}`;
+
+        // Fill repository table
+        const table = document.getElementById("repo-table");
+        data.repos.forEach(repo => {
+            const row = document.createElement("tr");
+            row.innerHTML = `
+                <td>${repo.name}</td>
+                <td>${repo.visibility}</td>
+                <td>${repo.created_at}</td>
+                <td>
+                    <button onclick="selectRepo(${repo.id})">Select</button>
+                    <button onclick="deleteRepo(${repo.id})">Delete</button>
+                    <button onclick="snapshotRepo(${repo.id})">Snapshot</button>
+                </td>
+            `;
+            table.appendChild(row);
+        });
+
+        // Fill activity log
+        const logList = document.getElementById("log-list");
+        logList.innerHTML = "";  // Clear any existing logs
+        data.logs.forEach(log => {
+            const li = document.createElement("li");
+            li.textContent = `${log.timestamp}: ${log.action} on repo ${log.repo_id}`;
+            logList.appendChild(li);
+        });
+    })
+    .catch(err => {
+        console.error("Dashboard error:", err);
+        document.body.innerHTML = "<p>Error loading dashboard.</p>";
+    });
+});
+
+
+
+let currentRepoId = null;
+
+function selectRepo(repoId) {
+    currentRepoId = repoId;
+    document.getElementById("upload-section").style.display = "block";
+    document.getElementById("commit-section").style.display = "block";
+}
+
+function deleteRepo(repoId) {
+    const token = localStorage.getItem("token");
+    fetch(`/repositories/${repoId}`, {
+        method: "DELETE",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(res => res.json())
+    .then(data => alert(data.detail));
+}
+
+function snapshotRepo(repoId) {
+    const token = localStorage.getItem("token");
+    fetch(`/repositories/${repoId}/snapshot_repo`, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        }
+    })
+    .then(res => res.json())
+    .then(data => alert("Snapshot created: " + data.snapshot_id));
+}
+
+document.getElementById("upload-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+    const formData = new FormData();
+    const file = document.getElementById("file-upload").files[0];
+    formData.append("file", file);
+
+    fetch(`/repositories/${currentRepoId}/upload`, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => alert("Uploaded: " + data.file_uploaded));
+});
+
+document.getElementById("commit-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+
+    const token = localStorage.getItem("token");
+    const formData = new FormData(e.target);
+    const message = formData.get("message");
+    const filename = formData.get("filename");
+    //const createSnapshot = e.target.create_snapshot.checked;
+
+    const endpoint = `/repositories/${currentRepoId}/commit`;
+
+    const finalForm = new FormData();
+    finalForm.append("message", message);
+    finalForm.append("filename", filename);
+
+    fetch(endpoint, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        },
+        body: finalForm
+    })
+    .then(res => res.json())
+    .then(data => {
+        alert(data.message || "Commit successful");
+    })
+    .catch(err => {
+        console.error("Commit error:", err);
+        alert("Failed to commit.");
+    });
+});
+/*document.getElementById("commit-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+    const token = localStorage.getItem("token");
+    const formData = new FormData(e.target);
+    formData.append("create_snapshot", e.target.create_snapshot.checked);
+
+    fetch(`/repositories/${currentRepoId}/commit`, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`
+        },
+        body: formData
+    })
+    .then(res => res.json())
+    .then(data => alert(data.message));
+});*/
+document.getElementById("access-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem("token");
+    const formData = new FormData(e.target);
+    fetch(`/repositories/${currentRepoId}/access-control`, {
+        method: "POST",
+        headers: {
+            "Authorization": `Bearer ${token}`,
+            "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+            user_id: formData.get("user_id"),
+            role: formData.get("role")
+        })
+    })
+    .then(res => res.json())
+    .then(data => alert(data.detail));
+});
+
+
+    </script>
+    <script>
+        document.getElementById("create-repo-form").addEventListener("submit", (e) => {
+            e.preventDefault();
+            const token = localStorage.getItem("token");
+            if (!token) return window.location.href = "/login";
+        
+            const form = e.target;
+            const formData = new FormData();
+            formData.append("name", form.name.value);
+            formData.append("is_private", form.visibility.value === "private");
+            formData.append("file", form.file.files[0]);
+        
+            fetch("/repositories/create", {
+                method: "POST",
+                headers: {
+                    "Authorization": `Bearer ${token}`
+                },
+                body: formData
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert(`Repository '${data.repo_name}' created successfully!`);
+                window.location.reload();
+            })
+            .catch(err => {
+                console.error("Repo creation failed:", err);
+                alert("Failed to create repository.");
+            });
+        });
+        </script>
+        
+</body>
+</html>
