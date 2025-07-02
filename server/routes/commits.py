@@ -10,6 +10,8 @@ from server.dependencies import get_current_user
 from server.schemas import UserOut
 from server.routes.repositories import compute_file_hash
 from fpdf import FPDF
+from server.utils.diff_utils import generate_diff
+from docx import Document
 
 router = APIRouter(prefix="/repositories", tags=["Commits"])
 import re
@@ -19,7 +21,6 @@ def strip_version_suffix(filename):
     base, ext = os.path.splitext(filename)
     base = re.sub(r'_v\d+$', '', base)
     return base + ext
-
 @router.post("/{repo_id}/commit")
 def create_commit(
     repo_id: int,
@@ -29,7 +30,7 @@ def create_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-  
+    # ✅ 1. Access check
     access = db.query(AccessControl).filter_by(
         user_id=current_user.id,
         repository_id=repo_id
@@ -37,41 +38,84 @@ def create_commit(
     if not access or access.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-
+    # ✅ 2. Normalize path
     safe_rel_path = pathlib.Path(filename).as_posix().lstrip("/\\")
-    base_name = os.path.splitext(os.path.basename(safe_rel_path))[0]
+    if not safe_rel_path.endswith(".txt"):
+        safe_rel_path = os.path.splitext(safe_rel_path)[0] + ".txt"
 
-    commit_folder = os.path.join(
-        f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/proposed_commits",
-        os.path.dirname(safe_rel_path),
-        base_name
-    )
-    unique_commit_filename = f"{uuid.uuid4()}.txt"
-    snapshot_path = os.path.join(commit_folder, unique_commit_filename)
+    full_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}", safe_rel_path)
+    ext = ".txt"
 
-    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
 
-    with open(snapshot_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    # ✅ 3. If it's a text file, generate diff
+    if ext == ".txt":
+        original = ""
+        if os.path.exists(full_path):
+            with open(full_path, "r", encoding="utf-8") as f:
+                original = f.read()
 
-    commit = Commit(
-        repo_id=repo_id,
-        author_id=current_user.id,
-        message=message,
-        original_filename=safe_rel_path,
-        versioned_filename=None,
-        snapshot_path=snapshot_path,
-        status="proposed"
-    )
-    db.add(commit)
-    db.commit()
-    db.refresh(commit)
+        diff = generate_diff(original, content)
 
-    return {
-        "commit_id": commit.id,
-        "message": f"Commit proposed for {safe_rel_path}",
-        "snapshot_file": snapshot_path
-    }
+        commit = Commit(
+            repo_id=repo_id,
+            author_id=current_user.id,
+            message=message,
+            original_filename=safe_rel_path,
+            versioned_filename=None,
+            snapshot_path=None,
+            diff_text=diff,
+            status="proposed"
+        )
+        db.add(commit)
+        db.commit()
+        db.refresh(commit)
+
+        return {
+            "commit_id": commit.id,
+            "message": f"Text commit created with diff for {safe_rel_path}",
+            "type": "diff"
+        }
+
+    # ✅ 4. If it's a non-text file (e.g., PDF, DOCX), store full snapshot
+    else:
+        commit_folder = os.path.join(
+            f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/proposed_commits",
+            os.path.dirname(safe_rel_path),
+            os.path.splitext(os.path.basename(safe_rel_path))[0]
+        )
+        os.makedirs(commit_folder, exist_ok=True)
+
+        ext = os.path.splitext(safe_rel_path)[1]
+        unique_filename = f"{uuid.uuid4()}{ext}"
+        snapshot_path = os.path.join(commit_folder, unique_filename)
+
+        # Save content to snapshot
+        try:
+            with open(snapshot_path, "w", encoding="utf-8") as f:
+                f.write(content)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to save snapshot: {e}")
+
+        commit = Commit(
+            repo_id=repo_id,
+            author_id=current_user.id,
+            message=message,
+            original_filename=safe_rel_path,
+            versioned_filename=None,
+            snapshot_path=snapshot_path,
+            diff_text=None,
+            status="proposed"
+        )
+        db.add(commit)
+        db.commit()
+        db.refresh(commit)
+
+        return {
+            "commit_id": commit.id,
+            "message": f"Binary commit stored with snapshot for {safe_rel_path}",
+            "snapshot_file": snapshot_path,
+            "type": "snapshot"
+        }
 @router.post("/{repo_id}/revert/{commit_id}")
 def revert_commit(
     repo_id: int,
@@ -79,33 +123,16 @@ def revert_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # ✅ 1. Access check
-    access = db.query(AccessControl).filter_by(
-        user_id=current_user.id, repository_id=repo_id
-    ).first()
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # ✅ 2. Fetch commit
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit:
         raise HTTPException(status_code=404, detail="Commit not found")
 
-    # ✅ 3. Snapshot must exist
-    if not commit.snapshot_path or not os.path.exists(commit.snapshot_path):
-        raise HTTPException(status_code=404, detail="Snapshot file missing")
-
-    # ✅ 4. Revert a merged commit (undo merge)
+    # ✅ Undo merge
     if commit.status == "merged":
-        merge = db.query(MergeHistory).filter_by(
-            repo_id=repo_id,
-            result_commit_id=commit.id
-        ).first()
-
-        if not merge:
-            raise HTTPException(status_code=400, detail="Merge history not found")
-
-        # Delete versioned file
         version_path = os.path.join(
             f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions",
             commit.versioned_filename
@@ -113,54 +140,55 @@ def revert_commit(
         if os.path.exists(version_path):
             os.remove(version_path)
 
-        # Mark commit as proposed
         commit.status = "proposed"
         commit.versioned_filename = None
-        db.delete(merge)
+        db.commit()
 
-        # Log
         db.add(Log(
             user_id=current_user.id,
             repo_id=repo_id,
             commit_id=commit.id,
             action="revert",
-            description=f"Undo merge for commit #{commit.id}",
+            description=f"Undo merge of commit #{commit.id}",
             timestamp=datetime.utcnow()
         ))
         db.commit()
 
-        return {"message": f"Merged version undone. Commit #{commit.id} marked as proposed again."}
+        return {"message": f"Merged version reverted. Commit #{commit.id} is now proposed again."}
 
-    # ✅ 5. Revert a delete (restore file from snapshot)
-    # If file does not exist in original path → it's a deleted file
+    # ✅ Restore deleted file
     original_path = os.path.join(
         f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}",
         commit.original_filename
     )
-    if not os.path.exists(original_path):
-        os.makedirs(os.path.dirname(original_path), exist_ok=True)
 
+    if os.path.exists(original_path):
+        raise HTTPException(status_code=400, detail="File already exists")
+
+    content = ""
+    if commit.diff_text:
+        content = apply_diff("", commit.diff_text)
+    elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
         with open(commit.snapshot_path, "r", encoding="utf-8") as f:
-            restored = f.read()
+            content = f.read()
+    else:
+        raise HTTPException(status_code=404, detail="No diff/snapshot to restore")
 
-        with open(original_path, "w", encoding="utf-8") as f:
-            f.write(restored)
+    os.makedirs(os.path.dirname(original_path), exist_ok=True)
+    with open(original_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
-        # Log
-        db.add(Log(
-            user_id=current_user.id,
-            repo_id=repo_id,
-            commit_id=commit.id,
-            action="revert",
-            description=f"Restored deleted file {commit.original_filename} from commit #{commit.id}",
-            timestamp=datetime.utcnow()
-        ))
-        db.commit()
+    db.add(Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        commit_id=commit.id,
+        action="revert",
+        description=f"Restored deleted file from commit #{commit.id}",
+        timestamp=datetime.utcnow()
+    ))
+    db.commit()
 
-        return {"message": f"File restored from trash: {commit.original_filename}"}
-
-    # ❌ If file already exists and not a merge → skip
-    raise HTTPException(status_code=400, detail="File already exists or commit not a merge/delete")
+    return {"message": f"File restored from commit {commit.id}"}
 
 from fastapi.responses import FileResponse
 import os
@@ -223,11 +251,28 @@ def merge_multiple_commits_or_versions(
 
     # ✅ Combine content from all commits (you can choose smarter merge logic)
     merged_content = ""
+    from server.utils.diff_utils import apply_diff
+
+    repo_root = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+
     for commit in commits:
-        if not os.path.exists(commit.snapshot_path):
-            raise HTTPException(status_code=404, detail=f"Snapshot missing for commit {commit.id}")
-        with open(commit.snapshot_path, "r", encoding="utf-8") as f:
-            merged_content += f"\n\n# Commit {commit.id}\n" + f.read()
+        content = ""
+        if commit.diff_text:
+            original_path = os.path.join(repo_root, commit.original_filename)
+            base_content = ""
+            if os.path.exists(original_path):
+                with open(original_path, "r", encoding="utf-8") as f:
+                    base_content = f.read()
+            content = apply_diff(base_content, commit.diff_text)
+
+        elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
+            with open(commit.snapshot_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        else:
+            raise HTTPException(status_code=404, detail=f"No valid snapshot or diff for commit {commit.id}")
+
+        merged_content += f"\n\n# Commit {commit.id}\n{content.strip()}\n"
+
 
     # ✅ Save merged content to new version file
     repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
@@ -270,12 +315,15 @@ def merge_multiple_commits_or_versions(
     )
     db.add(log)
     db.commit()
+    merged_content = merged_content.strip()
 
     return {
         "message": f"Merged into {versioned_filename}",
         "versioned_filename": versioned_filename,
         "commit_id": merged_commit.id
     }
+
+from server.utils.diff_utils import apply_diff
 
 @router.post("/{repo_id}/merge/{commit_id}")
 def merge_commit(
@@ -284,50 +332,59 @@ def merge_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # 1. Access check
+    # ✅ Access check
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can merge commits.")
 
-    # 2. Fetch commit
+    # ✅ Fetch commit
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit or commit.status != "proposed":
         raise HTTPException(status_code=404, detail="Commit not found or already merged")
 
-    if not os.path.exists(commit.snapshot_path):
-        raise HTTPException(status_code=404, detail="Snapshot file not found")
-
-    # 3. Determine base file name for versioning
-    base_filename = commit.original_filename or commit.versioned_filename
+    # ✅ Get original path
+    base_filename = commit.original_filename
     if not base_filename:
-        raise HTTPException(status_code=400, detail="Original filename is missing")
+        raise HTTPException(status_code=400, detail="Original filename missing")
 
-    versions_folder = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions")
-    os.makedirs(versions_folder, exist_ok=True)
+    version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
+    os.makedirs(version_dir, exist_ok=True)
+    repo_root = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    # ✅ Prepare merged content
+    content = ""
+    if commit.diff_text:
+        original_path = os.path.join(repo_root, commit.original_filename)
+        base_content = ""
+        if os.path.exists(original_path):
+            with open(original_path, "r", encoding="utf-8") as f:
+                base_content = f.read()
+        content = apply_diff(base_content, commit.diff_text)
 
-    # ✅ 4. Get next versioned filename (flat structure)
-    versioned_filename = get_next_flat_version_filename(versions_folder, base_filename)
-    version_path = os.path.join(versions_folder, versioned_filename)
+    elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
+        with open(commit.snapshot_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    else:
+        raise HTTPException(status_code=400, detail="No valid snapshot or diff to merge.")
 
-    # ✅ 5. Copy content to versioned file
-    with open(commit.snapshot_path, "r", encoding="utf-8") as src:
-        content = src.read()
-    with open(version_path, "w", encoding="utf-8") as dst:
-        dst.write(content)
+    # ✅ Save new version
+    versioned_filename = get_next_flat_version_filename(version_dir, base_filename)
+    version_path = os.path.join(version_dir, versioned_filename)
 
-    # ✅ 6. Overwrite original file
-    repo_root = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}")
-    original_path = os.path.join(repo_root, commit.original_filename)
+    with open(version_path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    # ✅ Overwrite file in working directory
+    original_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}", base_filename)
     os.makedirs(os.path.dirname(original_path), exist_ok=True)
-    with open(original_path, "w", encoding="utf-8") as out:
-        out.write(content)
+    with open(original_path, "w", encoding="utf-8") as f:
+        f.write(content)
 
-    # ✅ 7. Mark commit as merged
+    # ✅ Mark commit as merged
     commit.status = "merged"
     commit.versioned_filename = versioned_filename
     db.commit()
 
-    # ✅ 8. Log the action
+    # ✅ Log
     log = Log(
         user_id=current_user.id,
         repo_id=repo_id,
@@ -339,7 +396,42 @@ def merge_commit(
     db.add(log)
     db.commit()
 
-    return {"message": f"Commit merged as {versioned_filename}"}
+    return {"message": f"Commit merged as {versioned_filename}", "version_file": versioned_filename}
+from server.utils.diff_utils import apply_diff
+
+@router.get("/{repo_id}/commit_preview/{commit_id}")
+def preview_commit(
+    repo_id: int,
+    commit_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user)
+):
+    commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
+    if not commit:
+        raise HTTPException(status_code=404, detail="Commit not found")
+
+    base_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    full_path = os.path.join(base_path, commit.original_filename)
+
+    # 🧠 1. Reconstruct content
+    if commit.diff_text:
+        base_content = ""
+        if os.path.exists(full_path):
+            with open(full_path, "r", encoding="utf-8") as f:
+                base_content = f.read()
+
+        try:
+            content = apply_diff(base_content, commit.diff_text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Diff application failed: {e}")
+    elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
+        with open(commit.snapshot_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    else:
+        raise HTTPException(status_code=404, detail="Nothing to preview")
+
+    return {"content": content, "filename": commit.original_filename}
+
 @router.get("/repositories/{repo_id}/file_merge_info")
 def get_file_merge_info(
     repo_id: int,

@@ -24,6 +24,7 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 from pydantic import BaseModel
 from server.services.access_control import get_user_access_level
 from datetime import datetime
+from server.utils.diff_utils import apply_diff
 class NewFile(BaseModel):
     name: str
     content: str = ""
@@ -430,38 +431,26 @@ def list_versions(repo_id: int, filename: str, current_user: User = Depends(get_
     return [{"version_file": f, "path": os.path.join(version_dir, f)} for f in files]
 
 @router.get("/repositories/{repo_id}/commit_file")
-def get_commit_file(
+def get_commit_content(
     repo_id: int,
     commit_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # 1. Access check
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access:
         raise HTTPException(status_code=403, detail="Access denied")
 
-    # 2. Fetch commit
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit:
         raise HTTPException(status_code=404, detail="Commit not found")
 
-    # 3. Read the snapshot file
-    if not commit.snapshot_path or not os.path.exists(commit.snapshot_path):
-        raise HTTPException(status_code=404, detail="Snapshot file not found")
+    if commit.diff_text:
+        content = apply_diff("", commit.diff_text)
+    elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
+        with open(commit.snapshot_path, "r", encoding="utf-8") as f:
+            content = f.read()
+    else:
+        raise HTTPException(status_code=404, detail="No content available")
 
-    try:
-        ext = os.path.splitext(commit.snapshot_path)[1].lower()
-        if ext == ".txt":
-            with open(commit.snapshot_path, "r", encoding="utf-8") as f:
-                return {"content": f.read()}
-        else:
-            from server.utils.extract import extract_text_from_file
-            content = extract_text_from_file(commit.snapshot_path)
-            return {"content": content}
-    except Exception as e:
-        
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error reading commit snapshot: {str(e)}")
-
-
+    return {"content": content}

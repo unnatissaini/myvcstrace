@@ -6,7 +6,7 @@ from sqlalchemy.orm import relationship, backref
 from datetime import datetime
 from sqlalchemy import UniqueConstraint
 from enum import Enum
-
+from sqlalchemy import Text
 
 
 class User(Base):
@@ -41,10 +41,13 @@ class Commit(Base):
     message = Column(Text, nullable=False)
     original_filename = Column(String, nullable=False)      # e.g. "main.py"
     versioned_filename = Column(String, nullable=True)     # e.g. "main_v2.py"
-    snapshot_path = Column(String, nullable=False)          # e.g. "/snapshots/main_v2.py"
+    snapshot_path = Column(String, nullable=True)          # e.g. "/snapshots/main_v2.py"
 
     status = Column(String, default="proposed")             # 'proposed', 'merged'
     timestamp = Column(DateTime, default=datetime.utcnow)
+
+
+    diff_text = Column(Text, nullable=True)  # new column to store unified diff
 
     # Relationships
     repository = relationship("Repository", back_populates="commits")

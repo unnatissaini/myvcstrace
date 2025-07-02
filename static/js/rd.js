@@ -218,25 +218,28 @@ function saveFile() {
   }
 
   function viewCommitFile(commitId) {
-      const token = localStorage.getItem("token");
-    
-      fetch(`/repositories/${currentRepoId}/commit_file?commit_id=${commitId}`, {
-        headers: { "Authorization": `Bearer ${token}` }
+    const token = localStorage.getItem("token");
+  
+    fetch(`/repositories/${currentRepoId}/commit_preview/${commitId}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to load commit preview");
+        return res.json();
       })
-        .then(res => {
-          if (!res.ok) throw new Error("Failed to load commit file");
-          return res.json();
-        })
-        .then(data => {
-          fileNameElement.textContent = `Commit #${commitId}`;
-          fileContentElement.value = data.content;
-          fileContentElement.readOnly = true;
-          document.getElementById("save-file-btn").style.display = "none";
-        })
-        .catch(err => {
-          alert("Error loading commit file: " + err.message);
-        });
-    }
+      .then(data => {
+        fileNameElement.textContent = `Commit #${commitId} → ${data.filename}`;
+        fileContentElement.textContent = data.content;
+  
+        // Disable editing controls
+        document.getElementById("edit-btn").style.display = "none";
+        document.getElementById("convert-btn").style.display = "none";
+        document.getElementById("save-file-btn").style.display = "none";
+      })
+      .catch(err => {
+        alert("Error loading commit: " + err.message);
+      });
+  }
     
     function deleteFile() {
     const fileName = document.getElementById("file-name").textContent;
