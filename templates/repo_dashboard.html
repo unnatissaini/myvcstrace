@@ -32,11 +32,13 @@
           <button onclick="commit(false)">Commit</button>
           <button onclick="commit(true)">Commit + Snapshot</button>
           <button onclick="revertFile()">Revert</button>
+          <button id="edit-btn" style="display:none;" onclick="startEditingFile()">Edit</button>
+          <button id="convert-btn" style="display:none;" onclick="showConvertOptions()">Convert</button>
         </div>
       </div>
 
       <!-- Text area to show file content -->
-      <textarea id="file-content" readonly></textarea>
+      <div id="file-content" class="file-view-box"></div>
       <button id="save-file-btn" style="display: none; margin-top: 8px;">💾 Save Changes</button>
 
     </div>

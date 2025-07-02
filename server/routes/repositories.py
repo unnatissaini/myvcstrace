@@ -18,6 +18,12 @@ from server.constants.access_levels import ADMIN, WRITE
 from server.schemas import Role
 import uuid
 import zipfile
+from server.dependencies import get_current_user
+from server.db import get_db
+from server.models import AccessControl, Log
+from pydantic import BaseModel
+import os
+from datetime import datetime
 router = APIRouter(
     prefix="/repositories",
     tags=["repositories"]
@@ -215,35 +221,109 @@ def delete_repository(
 
     return {"detail": f"Repository '{repo.name}' deleted successfully."}
 
-@router.delete("/{repo_id}/file", status_code=204)
-def delete_file_in_repo(
+
+
+class DeleteFileRequest(BaseModel):
+    file_path: str  # relative path from repo root
+import shutil
+
+@router.delete("/{repo_id}/file")
+def delete_file(
     repo_id: int,
-    data: DeleteFileInput = Body(...),
+    payload: DeleteFileRequest = Body(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user = Depends(get_current_user)
 ):
+    # Access check (same as before)
+    access = db.query(AccessControl).filter_by(
+        user_id=current_user.id,
+        repository_id=repo_id
+    ).first()
+    if not access or access.role not in ("admin", "editor", "collaborator"):
+        raise HTTPException(status_code=403, detail="No permission to delete file.")
 
-    role = get_user_access_level(db, user_id=current_user.id, repo_id=repo_id)
-    if not can_write_repo(role):
-        raise HTTPException(status_code=403, detail=f"Insufficient permission to delete file. Role: {role}")
+    # Paths
+    repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    file_path = os.path.join(repo_path, payload.file_path)
+    trash_dir = os.path.join(repo_path, ".trash")
+    trashed_path = os.path.join(trash_dir, payload.file_path)
 
-    if not os.path.exists(data.file_path):
+    if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
 
-    os.remove(data.file_path)
+    try:
+        os.makedirs(os.path.dirname(trashed_path), exist_ok=True)
+        shutil.move(file_path, trashed_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to move to trash: {e}")
 
+    # Log the deletion
     log = Log(
         user_id=current_user.id,
         repo_id=repo_id,
         action="delete_file",
-        description=f"Deleted file {data.file_path}",
+        description=f"Moved to trash: {payload.file_path}",
         timestamp=datetime.utcnow()
     )
     db.add(log)
     db.commit()
 
-    return {"detail": "File deleted successfully."}
+    return {"detail": f"File moved to trash: {payload.file_path}"}
+@router.post("/{repo_id}/restore_file")
+def restore_file(
+    repo_id: int,
+    payload: DeleteFileRequest = Body(...),
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access:
+        raise HTTPException(status_code=403, detail="Permission denied")
 
+    repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    trash_path = os.path.join(repo_path, ".trash", payload.file_path)
+    original_path = os.path.join(repo_path, payload.file_path)
+
+    if not os.path.exists(trash_path):
+        raise HTTPException(status_code=404, detail="File not found in trash")
+
+    os.makedirs(os.path.dirname(original_path), exist_ok=True)
+    shutil.move(trash_path, original_path)
+
+    log = Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        action="restore_file",
+        description=f"Restored file: {payload.file_path}",
+        timestamp=datetime.utcnow()
+    )
+    db.add(log)
+    db.commit()
+
+    return {"detail": f"Restored: {payload.file_path}"}
+
+@router.get("/{repo_id}/trash_files")
+def list_trashed_files(
+    repo_id: int,
+    db: Session = Depends(get_db),
+    current_user = Depends(get_current_user)
+):
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    trash_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/.trash"
+    if not os.path.exists(trash_dir):
+        return []
+
+    files = []
+    for root, _, filenames in os.walk(trash_dir):
+        for name in filenames:
+            full_path = os.path.join(root, name)
+            rel_path = os.path.relpath(full_path, trash_dir)
+            files.append(rel_path.replace("\\", "/"))
+
+    return files
 
 @router.put("/{repo_id}/visibility")
 def change_visibility(repo_id: int, visibility: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
@@ -395,209 +475,3 @@ def create_folder(
 
     return {"message": "Folder created", "folder": filename}
 
-
-
-from fastapi import Body
-
-@router.post("/{repo_id}/merge_versions")
-def merge_versions(
-    repo_id: int,
-    filename: str = Form(...),
-    version1_path: str = Form(...),
-    version2_path: str = Form(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # ✅ Check admin access
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can merge versions.")
-
-    # ✅ Ensure both files exist
-    if not os.path.exists(version1_path) or not os.path.exists(version2_path):
-        raise HTTPException(status_code=404, detail="One or both version files not found.")
-
-    # ✅ Read both files
-    with open(version1_path, "r", encoding="utf-8") as f1, open(version2_path, "r", encoding="utf-8") as f2:
-        lines1 = f1.readlines()
-        lines2 = f2.readlines()
-
-    # ✅ Basic merge strategy: include all unique lines
-    merged_lines = []
-    max_len = max(len(lines1), len(lines2))
-    for i in range(max_len):
-        if i < len(lines1):
-            merged_lines.append(lines1[i])
-        if i < len(lines2) and lines2[i] != lines1[i] if i < len(lines1) else True:
-            merged_lines.append(lines2[i])
-
-    # ✅ Save merged version
-    version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions/{filename}"
-    os.makedirs(version_dir, exist_ok=True)
-    merged_filename = f"{uuid.uuid4()}_{filename}"
-    merged_path = os.path.join(version_dir, merged_filename)
-
-    with open(merged_path, "w", encoding="utf-8") as f:
-        f.writelines(merged_lines)
-
-    # ✅ Log the merge
-    log = Log(
-        user_id=current_user.id,
-        repo_id=repo_id,
-        action="merge_versions",
-        description=f"Merged two versions of {filename}",
-        timestamp=datetime.utcnow()
-    )
-    db.add(log)
-    db.commit()
-
-    return {
-        "detail": "Files merged successfully.",
-        "merged_version_path": merged_path
-    }
-@router.post("/{repo_id}/create_version")
-def create_version(
-    repo_id: int,
-    filename: str = Form(...),
-    source_path: str = Form(...),  # can be merged file or snapshot file
-    db: Session = Depends(get_db),
-    current_user: UserOut = Depends(get_current_user)
-):
-    # ✅ Check admin access
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can create official versions.")
-
-    if not os.path.exists(source_path):
-        raise HTTPException(status_code=404, detail="Source file not found.")
-
-    # ✅ Determine version number
-    version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versioned/{filename}"
-    os.makedirs(version_dir, exist_ok=True)
-    existing_versions = [f for f in os.listdir(version_dir) if f.startswith(filename)]
-    version_number = len(existing_versions) + 1
-
-    # ✅ Save approved version
-    version_name = f"{filename}_v{version_number}"
-    version_path = os.path.join(version_dir, version_name)
-    shutil.copyfile(source_path, version_path)
-
-    # ✅ Log the version creation
-    log = Log(
-        user_id=current_user.id,
-        repo_id=repo_id,
-        action="create_version",
-        description=f"Created version {version_number} for {filename}",
-        timestamp=datetime.utcnow()
-    )
-    db.add(log)
-    db.commit()
-
-    return {
-        "detail": f"Version {version_number} created.",
-        "version_path": version_path
-    }
-
-
-@router.post("/repositories/{repo_id}/merge_commits")
-def merge_commits(
-    repo_id: int,
-    file_path: str,
-    commit_ids: List[int],
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # Access check
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # Fetch commits
-    commits = db.query(Commit).filter(Commit.id.in_(commit_ids), Commit.repo_id == repo_id).all()
-    if len(commits) != len(commit_ids):
-        raise HTTPException(status_code=404, detail="One or more commits not found")
-
-    # Merge logic - here simple: concatenate content
-    merged_content = "\n".join([commit.content for commit in commits])
-
-    # Create new version file (save merged_content to disk if needed)
-    version_path = save_merged_file_to_disk(merged_content, file_path)
-
-    # Create new commit
-    new_commit = Commit(
-        repo_id=repo_id,
-        author_id=current_user.id,
-        file_path=file_path,
-        message="Merged commits: " + ", ".join(map(str, commit_ids)),
-        content=merged_content,
-        version_path=version_path,
-        status="merged"
-    )
-    db.add(new_commit)
-    db.commit()
-    db.refresh(new_commit)
-
-    return {"commit_id": new_commit.id, "message": new_commit.message, "status": new_commit.status}
-
-@router.post("/{repo_id}/merge")
-def merge_commits(
-    repo_id: int,
-    data: dict = Body(...),
-    db: Session = Depends(get_db),
-    current_user: UserOut = Depends(get_current_user)
-):
-    file_name = data.get("file_name")
-    commit_ids = data.get("commit_ids", [])
-    target = data.get("target", "new")
-
-    if not file_name or len(commit_ids) < 2:
-        raise HTTPException(status_code=400, detail="Invalid merge request")
-
-    # Check access
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor"):
-        raise HTTPException(status_code=403, detail="Permission denied")
-
-    # Fetch commits
-    commits = db.query(Commit).filter(Commit.id.in_(commit_ids), Commit.repo_id==repo_id, Commit.original_filename==file_name).all()
-    if len(commits) != len(commit_ids):
-        raise HTTPException(status_code=404, detail="One or more commits not found")
-
-    # Merge contents (basic concat, can enhance later)
-    merged_content = ""
-    for c in commits:
-        if c.content:
-            merged_content += c.content + "\n"
-        elif c.version_path and os.path.exists(c.version_path):
-            with open(c.version_path, "r", encoding="utf-8") as f:
-                merged_content += f.read() + "\n"
-
-    repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
-
-    if target == "main":
-        target_path = os.path.join(repo_folder, file_name)
-    else:
-        # Create a new merged file
-        base_name, ext = os.path.splitext(file_name)
-        new_file_name = f"{base_name}_merged_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}{ext}"
-        target_path = os.path.join(repo_folder, new_file_name)
-        file_name = new_file_name  # update for commit
-
-    os.makedirs(os.path.dirname(target_path), exist_ok=True)
-    with open(target_path, "w", encoding="utf-8") as f:
-        f.write(merged_content)
-
-    # Save merge commit
-    merge_commit = Commit(
-        repo_id=repo_id,
-        author_id=current_user.id,
-        message=f"Merged commits {', '.join(map(str, commit_ids))}",
-        parent_commit_id=commit_ids[-1],
-        file_path=file_name,
-        content=merged_content,
-        status="merged"
-    )
-    db.add(merge_commit)
-    db.commit()
-
-    return {"message": f"Commits merged into {'main file' if target=='main' else file_name}"}

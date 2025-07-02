@@ -17,6 +17,7 @@ import hashlib
 from server.models import Log
 import os
 import uuid
+import traceback
 from typing import List
 from server.models import AccessControl
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -324,7 +325,7 @@ def get_file_commits(
                 Commit.versioned_filename.like(f"{file_path}%")
             )
         )
-        .order_by(Commit.timestamp.asc())  # earlier to latest
+        .order_by(Commit.timestamp.asc())
         .all()
     )
 
@@ -342,52 +343,8 @@ def get_file_commits(
             "snapshot_path": commit.snapshot_path
         })
 
-    # 4. Build and return commit tree
+    # 4. Return tree structure
     return build_commit_tree(commits)
-
-@router.get("/repositories/{repo_id}/file_commits")
-def get_file_commits(
-    repo_id: int,
-    file_path: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    # 1. Check access
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # 2. Fetch commits for the given file
-    commits = (
-        db.query(Commit, User.username)
-        .join(User, Commit.author_id == User.id)
-        .filter(Commit.repo_id == repo_id)
-        .filter(
-        or_(
-            Commit.original_filename == file_path,
-            Commit.versioned_filename.like(f"{base_name}_v%.{ext.strip('.')}"),
-            Commit.versioned_filename.like(f"{file_path}%")
-        )
-        )  # ✔️ match based on original filename
-        .order_by(Commit.timestamp.desc())
-        .all()
-    )
-
-    # 3. Format response
-    result = []
-    for commit, username in commits:
-        result.append({
-            "commit_id": commit.id,
-            "author": username,
-            "message": commit.message,
-            "timestamp": commit.timestamp,
-            "status": commit.status,
-            "version_file": commit.versioned_filename or "",  # merged file name or empty for proposed
-            "snapshot_path": commit.snapshot_path  # optional: for loading content
-        })
-
-    return result
-
 
 
 @router.get("/repositories/{repo_id}/role")
@@ -464,55 +421,6 @@ def edit_file(
     return {"detail": f"File '{edit.filename}' saved successfully."}
 
 
-
-@router.post("/repositories/{repo_id}/merge_commit_with_original")
-def merge_commit_with_original(
-    repo_id: int,
-    commit_id: int = Form(...),
-    filename: str = Form(...),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
-):
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role != "admin":
-        raise HTTPException(status_code=403, detail="Only admins can merge commit with original")
-
-    commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
-    if not commit or not commit.snapshot_path:
-        raise HTTPException(status_code=404, detail="Commit or snapshot not found")
-
-    repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
-    original_path = os.path.join(repo_folder, filename)
-
-    if not os.path.exists(original_path):
-        raise HTTPException(status_code=404, detail="Original file not found")
-
-    with open(commit.snapshot_path, "r", encoding="utf-8") as f1, open(original_path, "r", encoding="utf-8") as f2:
-        lines1 = f1.readlines()
-        lines2 = f2.readlines()
-
-    merged_lines = list(dict.fromkeys(lines1 + lines2))
-
-    version_dir = os.path.join(repo_folder, "versions", filename)
-    os.makedirs(version_dir, exist_ok=True)
-    version_file = f"{filename}_v{uuid.uuid4().hex[:6]}.txt"
-    version_path = os.path.join(version_dir, version_file)
-
-    with open(version_path, "w", encoding="utf-8") as f:
-        f.writelines(merged_lines)
-
-    db.add(Log(
-        user_id=current_user.id,
-        repo_id=repo_id,
-        action="merge_commit_original",
-        description=f"Merged commit {commit_id} with original {filename}",
-        timestamp=datetime.utcnow()
-    ))
-    db.commit()
-
-    return {"detail": "Merged successfully", "version_path": version_path}
-
-
 @router.get("/repositories/{repo_id}/versions")
 def list_versions(repo_id: int, filename: str, current_user: User = Depends(get_current_user)):
     version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions/{filename}"
@@ -522,35 +430,38 @@ def list_versions(repo_id: int, filename: str, current_user: User = Depends(get_
     return [{"version_file": f, "path": os.path.join(version_dir, f)} for f in files]
 
 @router.get("/repositories/{repo_id}/commit_file")
-def get_commit_file(repo_id: int, commit_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    # Fetch the commit
+def get_commit_file(
+    repo_id: int,
+    commit_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Access check
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 2. Fetch commit
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit:
         raise HTTPException(status_code=404, detail="Commit not found")
 
-    # If it's a merged commit with versioned file (final content)
-    if commit.snapshot_path:
-        try:
-            with open(commit.snapshot_path, "r") as f:
-                content = f.read()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error reading file: {e}")
-    else:
-        # It's a proposed commit — find its Snapshot
-        snapshot = db.query(Snapshot).filter_by(commit_id=commit.id).first()
-        if not snapshot:
-            raise HTTPException(status_code=404, detail="Snapshot not found")
-        try:
-            with open(snapshot.content_path, "r") as f:
-                content = f.read()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Error reading snapshot: {e}")
+    # 3. Read the snapshot file
+    if not commit.snapshot_path or not os.path.exists(commit.snapshot_path):
+        raise HTTPException(status_code=404, detail="Snapshot file not found")
 
-    return {
-        "content": content,
-        "status": commit.status,
-        "author": commit.author.username,
-        "message": commit.message,
-        "timestamp": commit.timestamp
-    }
+    try:
+        ext = os.path.splitext(commit.snapshot_path)[1].lower()
+        if ext == ".txt":
+            with open(commit.snapshot_path, "r", encoding="utf-8") as f:
+                return {"content": f.read()}
+        else:
+            from server.utils.extract import extract_text_from_file
+            content = extract_text_from_file(commit.snapshot_path)
+            return {"content": content}
+    except Exception as e:
+        
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error reading commit snapshot: {str(e)}")
+
 

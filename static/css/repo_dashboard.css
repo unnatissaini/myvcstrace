@@ -211,3 +211,25 @@ body, html {
   margin: 0 2px;
   padding: 5px 10px;
 }
+
+.file-view-box textarea {
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-family: monospace;
+  font-size: 14px;
+  padding: 10px;
+}
+button {
+  margin-right: 6px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 6px;
+  background-color: rgba(0, 123, 255, 0.1);
+  color: #007bff;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button:hover {
+  background-color: rgba(0, 123, 255, 0.2);
+}

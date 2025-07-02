@@ -1,7 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
   let currentRepoId = null;
   let currentRole = null;
-  
+  let CURRENT_FILE_NAME = null;
+
   const actionPanel = document.getElementById("action-panel");
   const fileNameElement = document.getElementById("file-name");
   const fileContentElement = document.getElementById("file-content");
@@ -12,9 +13,11 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------------- File Operations ----------------
-  function viewFile(repoId, filePath) {
+  /*function viewFile(repoId, filePath) {
     const ext = filePath.split(".").pop().toLowerCase();
     const viewer = document.getElementById("file-content");
+    CURRENT_FILE_NAME = filePath; 
+    fileNameElement.textContent = filePath;
 
     fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`)
       .then(res => res.json())
@@ -22,10 +25,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // For doc, docx, pdf → show editable textarea with commit button
         if (["doc", "docx", "pdf"].includes(ext)) {
           viewer.innerHTML = `
-            <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
-            <br />
-            <button onclick="commitEditedText('${filePath}')">Commit Edited Text</button>
-          `;
+          <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
+          <br />
+          <button onclick="commitEditedText('${filePath}')">Commit Edited Text</button>
+        `;        
         } else {
           // For regular text files
           viewer.innerHTML = `
@@ -37,7 +40,37 @@ document.addEventListener('DOMContentLoaded', () => {
         viewer.textContent = "Error loading file.";
         console.error(err);
       });
+  }*/
+  function viewFile(repoId, filePath) {
+    const ext = filePath.split(".").pop().toLowerCase();
+    CURRENT_FILE_NAME = filePath;
+    fileNameElement.textContent = filePath;
+  
+    const viewer = document.getElementById("file-content");
+  
+    fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`)
+      .then(res => res.json())
+      .then(data => {
+        // Display content
+        viewer.textContent = data.content || "(empty)";
+  
+        // Enable buttons
+        document.getElementById("edit-btn").style.display =
+          ["admin", "editor", "collaborator"].includes(currentRole) ? "inline-block" : "none";
+  
+        // If versioned file and ends with .txt → allow conversion
+        if (filePath.includes("versions/") && filePath.endsWith(".txt")) {
+          document.getElementById("convert-btn").style.display = "inline-block";
+        } else {
+          document.getElementById("convert-btn").style.display = "none";
+        }
+      })
+      .catch(err => {
+        viewer.textContent = "Error loading file.";
+        console.error(err);
+      });
   }
+  
 
 
 function saveFile() {
@@ -298,7 +331,7 @@ function saveFile() {
 
   function submitCommit(snapshot) {
     const message = document.getElementById("commit-message").value;
-    const filename = fileNameElement.textContent;
+    const filename = CURRENT_FILE_NAME;
     if (!message) return alert("Enter a commit message.");
     if (filename === "Select a file") return alert("Select a file first.");
 
@@ -306,7 +339,9 @@ function saveFile() {
     const formData = new FormData();
     formData.append("message", message);
     formData.append("filename", filename);
-    formData.append("content", fileContentElement.value);
+    const editor = document.getElementById("editor");
+    const content = editor ? editor.value : fileContentElement.textContent || "";
+    formData.append("content", content);
     formData.append("create_snapshot", snapshot);
 
     const endpoint = `/repositories/${currentRepoId}/commit`;
@@ -324,54 +359,103 @@ function saveFile() {
   }
 
   // ---------------- Revert ----------------
-
   function revertFile() {
-    const filename = fileNameElement.textContent;
-    if (!filename || filename === "Select a file") {
-      return alert("Select a file first to revert.");
-    }
-
-    actionPanel.classList.add("open");
-    const panel = document.getElementById("panel-content");
-    panel.innerHTML = `
-      <h3>Revert File</h3>
-      <p>File: <b>${filename}</b></p>
-      <select id="revert-commit-id" style="width: 100%; padding: 5px;">
-        <option value="">Loading commits...</option>
-      </select>
-    `;
-    const revertBtn = document.createElement("button");
-    revertBtn.textContent = "Revert to Commit";
-    revertBtn.addEventListener("click", submitRevert);
-    panel.appendChild(revertBtn);
-
+    const filename = CURRENT_FILE_NAME;
+    const panel = document.getElementById("action-panel");
+    const content = document.getElementById("panel-content");
+    panel.classList.add("open");
+  
     const token = localStorage.getItem("token");
-    fetch(`/repositories/${currentRepoId}/file_commits?file_path=${encodeURIComponent(filename)}`, {
+  
+    // 🔁 1. Handle trash restore if no file selected
+    if (!filename || filename === "Select a file") {
+      fetch(`/repositories/${currentRepoId}/trash_files`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      })
+        .then(res => res.json())
+        .then(files => {
+          if (!files.length) {
+            content.innerHTML = `<p>No deleted files found in trash.</p>`;
+            return;
+          }
+  
+          content.innerHTML = `
+            <h3>Restore Deleted File</h3>
+            <select id="restore-file-select" style="width:100%; padding: 5px;">
+              ${files.map(f => `<option value="${f}">${f}</option>`).join("")}
+            </select>
+            <br><br>
+            <button onclick="submitRestore()">Restore Selected File</button>
+          `;
+        })
+        .catch(err => {
+          content.innerHTML = `<p>Error loading trash files.</p>`;
+          console.error(err);
+        });
+  
+      return;
+    }
+  
+    // 🧠 2. If file is selected, check if it's a merged version
+    fetch(`/repositories/${currentRepoId}/file_merge_info?file_name=${encodeURIComponent(filename)}`, {
       headers: { "Authorization": `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(commits => {
-        const dropdown = document.getElementById("revert-commit-id");
-        dropdown.innerHTML = "";
-        if (commits.length === 0) {
-          dropdown.innerHTML = `<option value="">No snapshots found for this file.</option>`;
+      .then(info => {
+        if (info.is_merged) {
+          const confirmMsg = `This file was created by merging:\n• ${info.sources.join("\n• ")}\n\nAre you sure you want to undo this merge?`;
+          if (!confirm(confirmMsg)) return;
+  
+          return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` }
+          });
+        } else {
+          // ❗ If not a merged file and revert of normal commits is disabled, show warning
+          alert("This file was not created via merge and cannot be reverted.");
+          closeActionPanel();
           return;
         }
-        commits.filter(c => c.status !== "merged").forEach(commit => {
-          const option = document.createElement("option");
-          option.value = commit.commit_id;
-          option.textContent = `#${commit.commit_id} - ${commit.message} (${new Date(commit.timestamp).toLocaleString()})`;
-          dropdown.appendChild(option);
-        });
+      })
+      .then(res => {
+        if (!res) return;
+        return res.json();
+      })
+      .then(data => {
+        if (data) {
+          alert(data.message || "Revert successful");
+          closeActionPanel();
+          viewFile(currentRepoId, filename);
+        }
       })
       .catch(err => {
-        document.getElementById("revert-commit-id").innerHTML = `<option>Error loading commits</option>`;
-        console.error(err);
+        console.error("Revert failed", err);
+        alert("Error: " + err.message);
       });
   }
-
+    
+  function submitRestore() {
+    const selectedFile = document.getElementById("restore-file-select").value;
+    const token = localStorage.getItem("token");
+  
+    fetch(`/repositories/${currentRepoId}/revert_deleted?filename=${encodeURIComponent(selectedFile)}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || "File restored.");
+        closeActionPanel();
+        loadFiles(currentRepoId);
+      })
+      .catch(err => {
+        alert("Restore failed: " + err.message);
+      });
+  }
+  
+    
   function submitRevert() {
-    const filename = fileNameElement.textContent;
+    const filename = CURRENT_FILE_NAME;
     const commitId = document.getElementById("revert-commit-id").value;
     const token = localStorage.getItem("token");
 
@@ -488,23 +572,74 @@ function mergeCommitWithOriginal(commitId, filePath) {
     closeActionPanel();
     loadFiles(currentRepoId);
   }
-  function mergeFile() {
+  function submitGenericMerge() {
     const repoId = document.body.getAttribute("data-repo-id");
-    const fileName = document.getElementById("file-name").innerText;
-    if (fileName === "Select a file") {
-      alert("Select a file first!");
+    const selectedFiles = Array.from(
+      document.querySelectorAll('#merge-version-list input[type="checkbox"]:checked')
+    ).map(cb => cb.value);
+  
+    if (selectedFiles.length !== 2) {
+      alert("Select exactly 2 version files to merge.");
       return;
     }
   
+    const token = localStorage.getItem("token");
+  
+    fetch(`/repositories/${repoId}/merge_versions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${token}`
+      },
+      body: JSON.stringify({ version_files: selectedFiles })
+    })
+      .then(res => res.json())
+      .then(data => {
+        alert(data.message || "Version merge complete.");
+        closeActionPanel();
+        loadFiles(repoId);
+      })
+      .catch(err => {
+        console.error("Merge failed:", err);
+        alert("Failed to merge versions.");
+      });
+  }
+  
+  function mergeFile() {
+    const repoId = document.body.getAttribute("data-repo-id");
+    const fileName = document.getElementById("file-name").innerText;
     const panel = document.getElementById("action-panel");
     const content = document.getElementById("panel-content");
     panel.classList.add("open");
-
+  
+    // If no file is selected, show option to select from all version files
+    if (fileName === "Select a file") {
+      content.innerHTML = `<h3>Merge Any Two Versions</h3><p>Select version files to merge:</p><div id="merge-version-list">Loading...</div><button onclick="submitGenericMerge()">Merge Selected</button>`;
+  
+      fetch(`/repositories/${repoId}/version_files`, {
+        headers: { "Authorization": `Bearer ${localStorage.getItem("token")}` }
+      })
+        .then(res => res.json())
+        .then(files => {
+          const listDiv = document.getElementById("merge-version-list");
+          listDiv.innerHTML = files
+            .filter(f => f.endsWith(".txt"))
+            .map(f => `<label><input type="checkbox" value="${f}"> ${f}</label><br>`)
+            .join("");
+        })
+        .catch(err => {
+          document.getElementById("merge-version-list").innerHTML = "Failed to load version files.";
+          console.error(err);
+        });
+  
+      return;
+    }
+  
+    // If a file is selected, merge its commits
     fetch(`/repositories/${repoId}/file_commits?file_path=${encodeURIComponent(fileName)}`)
       .then(res => res.json())
       .then(commits => {
         if (!commits || commits.length === 0) {
-          console.log("Commits API response", commits);
           content.innerHTML = `<p>No commits found for this file.</p>`;
           return;
         }
@@ -513,9 +648,13 @@ function mergeCommitWithOriginal(commitId, filePath) {
           <h3>Merge Commits for ${fileName}</h3>
           <div>Select commits to merge:</div>
           <div style="max-height:150px; overflow-y:auto;">
-            ${commits.map(c => 
-              `<label><input type="checkbox" value="${c.commit_id}"> Commit ${c.commit_id}: ${c.message}</label><br>`
-            ).join("")}
+            ${commits
+              .filter(c => c.status === "proposed")
+              .map(
+                c =>
+                  `<label><input type="checkbox" value="${c.commit_id}"> Commit ${c.commit_id}: ${c.message}</label><br>`
+              )
+              .join("")}
           </div>
           <button onclick="confirmMerge('${fileName}', ${repoId})">Confirm Merge</button>
         `;
@@ -523,8 +662,9 @@ function mergeCommitWithOriginal(commitId, filePath) {
   }
   
   function confirmMerge(fileName, repoId) {
-    const selectedCommits = Array.from(document.querySelectorAll('#panel-content input[type="checkbox"]:checked'))
-      .map(cb => cb.value);
+    const selectedCommits = Array.from(
+      document.querySelectorAll('#panel-content input[type="checkbox"]:checked')
+    ).map(cb => cb.value);
   
     if (selectedCommits.length < 2) {
       alert("Select at least 2 commits to merge.");
@@ -532,24 +672,83 @@ function mergeCommitWithOriginal(commitId, filePath) {
     }
   
     const token = localStorage.getItem("token");
+  
+    // Send `null` if no actual file is selected (e.g., when merging version files)
+    const payload = {
+      file_name: fileName === "Select a file" ? null : fileName,
+      commit_ids: selectedCommits
+    };
+  
     fetch(`/repositories/${repoId}/merge`, {
       method: "POST",
-      headers: { 
+      headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({
-        file_name: fileName,
-        commit_ids: selectedCommits
+      body: JSON.stringify(payload)
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Merge failed");
+        return res.json();
       })
-    }).then(res => res.json())
       .then(data => {
         alert(data.message || `Merge completed into ${data.versioned_filename}`);
         closeActionPanel();
         loadFiles(repoId);
       })
-      
-      .catch(err => alert("Merge failed: " + err.message));
+      .catch(err => {
+        console.error("Merge error:", err);
+        alert("Merge failed: " + err.message);
+      });
+  }
+  
+  
+  function startEditingFile() {
+    const token = localStorage.getItem("token");
+  
+    fetch(`/repositories/${currentRepoId}/edit_file_text?name=${encodeURIComponent(CURRENT_FILE_NAME)}`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => {
+        // Update current file to .txt version for commits
+        CURRENT_FILE_NAME = data.editable_path;
+  
+        const viewer = document.getElementById("file-content");
+        viewer.innerHTML = `
+          <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
+          <br>
+          <button onclick="commitEditedText('${data.editable_path}')">Commit Edited Text</button>
+        `;
+      })
+      .catch(err => {
+        alert("Error preparing file for editing: " + err.message);
+      });
+  }
+  
+  
+  function showConvertOptions() {
+    const panel = document.getElementById("action-panel");
+    const content = document.getElementById("panel-content");
+    panel.classList.add("open");
+  
+    content.innerHTML = `
+      <h3>Convert Version File</h3>
+      <p>File: ${CURRENT_FILE_NAME}</p>
+      <select id="target-format">
+        <option value="docx">DOCX</option>
+        <option value="pdf">PDF</option>
+      </select>
+      <br><br>
+      <button onclick="convertFile()">Convert & Download</button>
+    `;
+  }
+  
+  function convertFile() {
+    const format = document.getElementById("target-format").value;
+    const url = `/repositories/${currentRepoId}/convert_version?filename=${encodeURIComponent(CURRENT_FILE_NAME)}&target_format=${format}`;
+  
+    window.open(url, "_blank"); // Trigger file download
   }
   
   
@@ -569,4 +768,10 @@ function mergeCommitWithOriginal(commitId, filePath) {
   window.deleteFile = deleteFile;
   window.mergeFile = mergeFile;
   window.confirmMerge = confirmMerge;
+  window.startEditingFile = startEditingFile;
+  window.showConvertOptions = showConvertOptions;
+  window.convertFile = convertFile;
+  window.submitRestore = submitRestore;
+  window.submitGenericMerge = submitGenericMerge;
+
 });
