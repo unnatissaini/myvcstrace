@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 import os
 import uuid
+import pathlib
 from server.models import Log, FileVersion, MergeHistory
 from server.models import Commit, Snapshot, AccessControl
 from server.db import get_db
@@ -11,6 +12,14 @@ from server.schemas import UserOut
 from server.routes.repositories import compute_file_hash
 
 router = APIRouter(prefix="/repositories", tags=["Commits"])
+import re
+
+def strip_version_suffix(filename):
+    # e.g., a_v1.docs → a.docs
+    base, ext = os.path.splitext(filename)
+    base = re.sub(r'_v\d+$', '', base)
+    return base + ext
+
 @router.post("/{repo_id}/commit")
 def create_commit(
     repo_id: int,
@@ -28,25 +37,33 @@ def create_commit(
     if not access or access.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # ✅ 2. Prepare safe filename
-    safe_filename = os.path.basename(filename)
+    # ✅ 2. Normalize the filename
+    safe_rel_path = pathlib.Path(filename).as_posix().lstrip("/\\")
+    base_name = os.path.splitext(os.path.basename(safe_rel_path))[0]
 
-    # ✅ 3. Save content to a proposed file (not versioned yet)
-    proposed_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/proposed_commits"
-    os.makedirs(proposed_dir, exist_ok=True)
-    unique_name = f"{uuid.uuid4()}_{safe_filename}"
-    snapshot_path = os.path.join(proposed_dir, unique_name)
+    # ✅ 3. Commit folder structure: proposed_commits/folder/file/
+    commit_folder = os.path.join(
+        f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/proposed_commits",
+        os.path.dirname(safe_rel_path),
+        base_name
+    )
+    unique_commit_filename = f"{uuid.uuid4()}.txt"
+    snapshot_path = os.path.join(commit_folder, unique_commit_filename)
 
+    # ✅ 4. Ensure directory exists
+    os.makedirs(os.path.dirname(snapshot_path), exist_ok=True)
+
+    # ✅ 5. Write file content
     with open(snapshot_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    # ✅ 4. Save to DB as a proposed commit
+    # ✅ 6. Store commit metadata
     commit = Commit(
         repo_id=repo_id,
         author_id=current_user.id,
         message=message,
-        original_filename=safe_filename,
-        versioned_filename=None,      # Will be set on merge
+        original_filename=safe_rel_path,
+        versioned_filename=None,
         snapshot_path=snapshot_path,
         status="proposed"
     )
@@ -56,7 +73,7 @@ def create_commit(
 
     return {
         "commit_id": commit.id,
-        "message": f"Commit proposed for {safe_filename}",
+        "message": f"Commit proposed for {safe_rel_path}",
         "snapshot_file": snapshot_path
     }
 
@@ -120,6 +137,8 @@ def merge_commit_with_file(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
+
+
     # 1. Check access (admin only)
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role != "admin":
@@ -132,10 +151,14 @@ def merge_commit_with_file(
     if commit.status == "merged":
         raise HTTPException(status_code=400, detail="Commit already merged")
 
-    # 3. Update version number
+    if commit.original_filename and commit.original_filename.startswith("versions/"):
+        commit.original_filename = commit.original_filename[len("versions/"):]
+    base_name = strip_version_suffix(commit.original_filename or commit.versioned_filename)
+
     file_version = db.query(FileVersion).filter_by(
-        repo_id=repo_id, original_filename=commit.original_filename
+        repo_id=repo_id, original_filename=base_name
     ).first()
+
 
     if not file_version:
         file_version = FileVersion(
@@ -152,8 +175,10 @@ def merge_commit_with_file(
 
     # 4. Generate versioned filename
     version_number = file_version.latest_version
-    name, ext = os.path.splitext(commit.original_filename)
+    clean_name = strip_version_suffix(commit.original_filename or commit.versioned_filename)
+    name, ext = os.path.splitext(clean_name)
     versioned_filename = f"{name}_v{version_number}{ext}"
+
 
     # 5. Define file path
     version_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions/{versioned_filename}"

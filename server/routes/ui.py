@@ -154,6 +154,10 @@ def create_new_file(
 
 
 from server.utils.file_parser import extract_text_from_file  # <- add this
+import mimetypes
+from fastapi.responses import FileResponse, PlainTextResponse
+import mimetypes
+from fastapi.responses import FileResponse
 
 @router.get("/repositories/{repo_id}/file")
 def get_file_content(
@@ -162,28 +166,43 @@ def get_file_content(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Check access permission
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    # 1. Access check
+    access = db.query(AccessControl).filter_by(
+        user_id=current_user.id,
+        repository_id=repo_id
+    ).first()
     if not access:
         raise HTTPException(status_code=403, detail="No access to this repository.")
 
-    # Full file path
+    # 2. File path
     file_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/{name}"
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
 
-    # Try extracting content based on file extension
-    try:
-        ext = os.path.splitext(name)[1].lower()
-        if ext in [".doc", ".docx", ".pdf"]:
-            content = extract_text_from_file(file_path)
-        else:
-            with open(file_path, "r", encoding="utf-8") as f:
-                content = f.read()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading file: {str(e)}")
+    # 3. Detect MIME
+    mime_type, _ = mimetypes.guess_type(file_path)
+    ext = os.path.splitext(name)[1].lower()
 
-    return {"filename": name, "content": content}
+    # 4. Handle .pdf/.doc/.docx with text extraction
+    if ext in [".pdf", ".doc", ".docx"]:
+        try:
+            content = extract_text_from_file(file_path)
+            return {"filename": name, "content": content}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to extract content: {str(e)}")
+
+    # 5. Binary files → serve directly
+    if mime_type and not mime_type.startswith("text"):
+        return FileResponse(file_path, media_type=mime_type, filename=os.path.basename(name))
+
+    # 6. Text files
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            content = f.read()
+        return {"filename": name, "content": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading text file: {str(e)}")
+
 
 
 @router.get("/repositories/{repo_id}/dashboard", response_class=HTMLResponse)
@@ -270,6 +289,61 @@ async def get_accessible_repositories(
 
 from sqlalchemy import func, or_
 
+def build_commit_tree(commits):
+    tree = {}
+    lookup = {c["id"]: c for c in commits}
+    for commit in commits:
+        parent_id = commit.get("parent_commit_id")
+        if parent_id and parent_id in lookup:
+            lookup[parent_id].setdefault("children", []).append(commit)
+        else:
+            tree[commit["id"]] = commit
+    return list(tree.values())
+
+
+@router.get("/repositories/{repo_id}/file_commits")
+def get_file_commits(
+    repo_id: int,
+    file_path: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    # 1. Access check
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # 2. Fetch commits for file or its versions
+    raw_commits = (
+        db.query(Commit, User.username)
+        .join(User, Commit.author_id == User.id)
+        .filter(Commit.repo_id == repo_id)
+        .filter(
+            or_(
+                Commit.original_filename == file_path,
+                Commit.versioned_filename.like(f"{file_path}%")
+            )
+        )
+        .order_by(Commit.timestamp.asc())  # earlier to latest
+        .all()
+    )
+
+    # 3. Format commits for tree
+    commits = []
+    for commit, username in raw_commits:
+        commits.append({
+            "id": commit.id,
+            "author": username,
+            "message": commit.message,
+            "timestamp": str(commit.timestamp),
+            "status": commit.status,
+            "parent_commit_id": commit.parent_commit_id,
+            "version_file": commit.versioned_filename or "",
+            "snapshot_path": commit.snapshot_path
+        })
+
+    # 4. Build and return commit tree
+    return build_commit_tree(commits)
 
 @router.get("/repositories/{repo_id}/file_commits")
 def get_file_commits(
@@ -288,7 +362,13 @@ def get_file_commits(
         db.query(Commit, User.username)
         .join(User, Commit.author_id == User.id)
         .filter(Commit.repo_id == repo_id)
-        .filter(Commit.original_filename == file_path)  # ✔️ match based on original filename
+        .filter(
+        or_(
+            Commit.original_filename == file_path,
+            Commit.versioned_filename.like(f"{base_name}_v%.{ext.strip('.')}"),
+            Commit.versioned_filename.like(f"{file_path}%")
+        )
+        )  # ✔️ match based on original filename
         .order_by(Commit.timestamp.desc())
         .all()
     )
@@ -323,14 +403,20 @@ def get_user_role(
     return {"role": role}
 
 
-
 from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from datetime import datetime
+import os
+from server.db import get_db
+from server.models import AccessControl, Log
+from server.dependencies import get_current_user
+
 
 class FileEditRequest(BaseModel):
     filename: str
     content: str
     is_binary: bool = False
-import base64
 
 @router.put("/repositories/{repo_id}/edit_file")
 def edit_file(
@@ -339,28 +425,32 @@ def edit_file(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    # ✅ Access control
+    access = db.query(AccessControl).filter_by(
+        user_id=current_user.id,
+        repository_id=repo_id
+    ).first()
     if not access or access.role not in ("admin", "editor", "collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    file_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}", edit.filename)
+    # ✅ Full file path
+    file_path = os.path.join(
+        f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}",
+        edit.filename
+    )
+
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found")
 
     try:
-        if edit.is_binary:
-            # Decode from base64 and write as binary
-            decoded_data = base64.b64decode(edit.content)
-            with open(file_path, "wb") as f:
-                f.write(decoded_data)
-        else:
-            # Write plain text
-            with open(file_path, "w", encoding="utf-8") as f:
-                f.write(edit.content)
+        # ✅ Save plain text for all file types (binary handled via commit upload if needed)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(edit.content)
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Write failed: {e}")
 
-    # Log it
+    # ✅ Log the edit
     log = Log(
         user_id=current_user.id,
         repo_id=repo_id,

@@ -1,7 +1,7 @@
 document.addEventListener('DOMContentLoaded', () => {
   let currentRepoId = null;
   let currentRole = null;
-
+  
   const actionPanel = document.getElementById("action-panel");
   const fileNameElement = document.getElementById("file-name");
   const fileContentElement = document.getElementById("file-content");
@@ -12,52 +12,83 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------------- File Operations ----------------
-
   function viewFile(repoId, filePath) {
-    const token = localStorage.getItem("token");
-    fileNameElement.textContent = filePath;
+    const ext = filePath.split(".").pop().toLowerCase();
+    const viewer = document.getElementById("file-content");
 
-    fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`, {
-      headers: { "Authorization": `Bearer ${token}` },
-    })
+    fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`)
       .then(res => res.json())
       .then(data => {
-        fileContentElement.value = data.content;
-        const editableRoles = ["admin", "editor", "collaborator"];
-        const canEdit = editableRoles.includes(currentRole);
-
-        fileContentElement.readOnly = !canEdit;
-        document.getElementById("save-file-btn").style.display = canEdit ? "inline-block" : "none";
-
-        if (canEdit) {
-          document.getElementById("save-file-btn").onclick = () => {
-            saveFile(repoId, filePath, fileContentElement.value);
-          };
+        // For doc, docx, pdf → show editable textarea with commit button
+        if (["doc", "docx", "pdf"].includes(ext)) {
+          viewer.innerHTML = `
+            <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
+            <br />
+            <button onclick="commitEditedText('${filePath}')">Commit Edited Text</button>
+          `;
+        } else {
+          // For regular text files
+          viewer.innerHTML = `
+            <pre style="white-space: pre-wrap; padding: 10px;">${data.content || "(empty)"}</pre>
+          `;
         }
       })
-      .catch(err => alert("Error: " + err.message));
+      .catch(err => {
+        viewer.textContent = "Error loading file.";
+        console.error(err);
+      });
   }
 
-  function saveFile(repoId, filePath, content) {
-    const token = localStorage.getItem("token");
-    fetch(`/repositories/${repoId}/edit_file`, {
-      method: "PUT",
-      headers: {
-        "Authorization": `Bearer ${token}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({ filename: filePath, content: content })
-    })
-      .then(res => res.json())
-      .then(data => {
-        if (!data || !data.detail) throw new Error("No response.");
-        alert(data.detail || "File saved successfully.");
-      })
-      .catch(err => alert("Failed to save file: " + err.message));
+
+function saveFile() {
+  const ext = CURRENT_FILE_NAME.split(".").pop().toLowerCase();
+  const token = localStorage.getItem("token");
+
+  let contentElement = document.getElementById("editor") || document.getElementById("file-content");
+
+  if (!contentElement) {
+    alert("No content to save.");
+    return;
   }
+
+  // Get content based on element type
+  const content = contentElement.tagName === "TEXTAREA"
+    ? contentElement.value
+    : contentElement.textContent;
+
+  const confirmMsg = confirm("Are you sure you want to save the current changes?");
+  if (!confirmMsg) return;
+
+  fetch(`/repositories/${currentRepoId}/edit_file`, {
+    method: "PUT",
+    headers: {
+      "Authorization": `Bearer ${token}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      filename: CURRENT_FILE_NAME,
+      content: content,
+      is_binary: false  // always false since we're editing text
+    })
+  })
+    .then(res => {
+      if (!res.ok) throw new Error("Failed to save");
+      return res.json();
+    })
+    .then(data => {
+      alert(data.message || "File saved successfully.");
+    })
+    .catch(err => {
+      console.error(err);
+      alert("Save failed: " + err.message);
+    });
+}
+
+
+
 
   // ---------------- File Tree ----------------
-
+  
   function renderFileTree(tree, parent) {
     tree.forEach(item => {
       const li = document.createElement("li");
@@ -101,42 +132,56 @@ document.addEventListener('DOMContentLoaded', () => {
   function fetchAndRenderCommits(repoId, filePath, ulElement) {
     ulElement.innerHTML = `<li>Loading commits...</li>`;
     const token = localStorage.getItem("token");
-    
+
     fetch(`/repositories/${repoId}/file_commits?file_path=${encodeURIComponent(filePath)}`, {
       headers: { "Authorization": `Bearer ${token}` }
     })
       .then(res => res.json())
-      .then(commits => {
+      .then(commitTree => {
         ulElement.innerHTML = "";
-        if (commits.length === 0) {
+        if (!commitTree.length) {
           ulElement.innerHTML = `<li>No commits found</li>`;
           return;
         }
-        commits.filter(c => c.status !== "merged").forEach(commit => {
-          const li = document.createElement("li");
-          li.innerHTML = `
-            <div>
-              #${commit.commit_id} - ${commit.message} [${commit.status}] (${new Date(commit.timestamp).toLocaleString()})
-              <button class="merge-btn">Merge</button>
-            </div>
-          `;
-        
-          li.querySelector(".merge-btn").addEventListener("click", () => {
-            mergeCommitWithOriginal(commit.commit_id, filePath);
-          });
-        
-          li.addEventListener("click", (e) => {
-            e.stopPropagation(); // Avoid toggling parent file list
-            viewCommitFile(commit.commit_id);
-          });
-        
-          ulElement.appendChild(li);
-        });        
+
+        renderCommitTree(commitTree, ulElement, filePath);
       })
       .catch(err => {
         ulElement.innerHTML = `<li>Error loading commits</li>`;
         console.error(err);
       });
+  }
+  function renderCommitTree(commits, parentUl, filePath) {
+    commits.forEach(commit => {
+      const li = document.createElement("li");
+      li.innerHTML = `
+        <div style="margin-left: 8px;">
+          <span>#${commit.id} - ${commit.message} [${commit.status}] (${new Date(commit.timestamp).toLocaleString()})</span>
+          ${commit.status === "proposed" ? `<button class="merge-btn">Merge</button>` : ""}
+        </div>
+      `;
+
+      if (commit.status === "proposed") {
+        li.querySelector(".merge-btn").addEventListener("click", () => {
+          mergeCommitWithOriginal(commit.id, filePath);
+        });
+      }
+
+      li.addEventListener("click", (e) => {
+        e.stopPropagation();
+        viewCommitFile(commit.id);
+      });
+
+      parentUl.appendChild(li);
+
+      // Recursively add children commits if any
+      if (commit.children && commit.children.length > 0) {
+        const nestedUl = document.createElement("ul");
+        nestedUl.style.marginLeft = "20px";
+        li.appendChild(nestedUl);
+        renderCommitTree(commit.children, nestedUl, filePath);
+      }
+    });
   }
 
   function viewCommitFile(commitId) {
@@ -350,18 +395,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ---------------- Helpers ----------------
 
-  function mergeCommitWithOriginal(commitId, filename) {
-    const token = localStorage.getItem("token");
-  
-    fetch(`/repositories/${currentRepoId}/merge/${commitId}`, {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${token}` }
-    })
-      .then(res => res.json())
-      .then(data => alert(data.message || "Merged successfully."))
-      .catch(err => alert("Merge failed: " + err.message));
+function mergeCommitWithOriginal(commitId, filePath) {
+  if (!commitId || commitId === "undefined" || isNaN(commitId)) {
+    alert("Invalid commit ID — merge aborted.");
+    return;
   }
-  
+
+  const token = localStorage.getItem("token");
+
+  fetch(`/repositories/${currentRepoId}/merge/${commitId}`, {
+    method: "POST",
+    headers: { "Authorization": `Bearer ${token}` }
+  })
+    .then(res => res.json())
+    .then(data => alert(data.message || "Merged successfully."))
+    .catch(err => alert("Merge failed: " + err.message));
+}
+
 
   function closeActionPanel() {
     actionPanel.classList.remove("open");
