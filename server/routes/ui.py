@@ -25,6 +25,7 @@ from pydantic import BaseModel
 from server.services.access_control import get_user_access_level
 from datetime import datetime
 from server.utils.diff_utils import apply_diff
+from starlette.status import HTTP_303_SEE_OTHER
 class NewFile(BaseModel):
     name: str
     content: str = ""
@@ -52,7 +53,13 @@ def login(
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_access_token(data={"sub": user.username})
-    return JSONResponse({"access_token": token, "token_type": "bearer"})
+    response = RedirectResponse(
+        url="/superadmin" if username == "superadmin" else "/dashboard",
+        status_code=HTTP_303_SEE_OTHER
+    )
+    response.set_cookie(key="access_token", value=token, httponly=True)
+    return response
+    #return JSONResponse({"access_token": token, "token_type": "bearer"})
 
 # Logout
 @router.get("/logout")

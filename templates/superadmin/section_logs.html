@@ -1,0 +1,16 @@
+<h3>Recent Activity Logs</h3>
+<ul id="log-list">
+  <li>Loading...</li>
+</ul>
+
+<script>
+fetch('/api/superadmin/logs')
+  .then(res => res.json())
+  .then(logs => {
+    const list = document.getElementById("log-list");
+    list.innerHTML = "";
+    logs.forEach(log => {
+      list.innerHTML += `<li>[${log.timestamp}] ${log.message}</li>`;
+    });
+  });
+</script>

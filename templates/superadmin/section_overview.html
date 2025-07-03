@@ -1,0 +1,18 @@
+<h3>Dashboard Overview</h3>
+<div class="repo-view">
+  <p>Total Users: <strong id="total-users">Loading...</strong></p>
+  <p>Total Repositories: <strong id="total-repos">Loading...</strong></p>
+  <p>Public Repositories: <strong id="public-repos">Loading...</strong></p>
+  <p>Private Repositories: <strong id="private-repos">Loading...</strong></p>
+</div>
+
+<script>
+fetch('/api/superadmin/stats')
+  .then(res => res.json())
+  .then(stats => {
+    document.getElementById("total-users").innerText = stats.total_users;
+    document.getElementById("total-repos").innerText = stats.total_repos;
+    document.getElementById("public-repos").innerText = stats.public_repos;
+    document.getElementById("private-repos").innerText = stats.private_repos;
+  });
+</script>

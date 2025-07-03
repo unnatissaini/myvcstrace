@@ -7,6 +7,7 @@ from server.routes import ui
 from fastapi import FastAPI, Request
 from starlette.middleware.base import BaseHTTPMiddleware
 from server.routes import commits
+from server.routes import superadmin
 
 class AuthHeaderFromCookieMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -30,5 +31,6 @@ app.include_router(repositories.router, prefix="", tags=["Repositories"])
 app.include_router(ui.router)
 app.add_middleware(AuthHeaderFromCookieMiddleware)
 app.include_router(commits.router)
+app.include_router(superadmin.router)
 
 

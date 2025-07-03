@@ -29,7 +29,7 @@ curl http://127.0.0.1:8000/repositories/1/log
  curl -X POST http://127.0.0.1:8000/auth/login ^
   -H "Content-Type: application/json" ^
   -d "{\"username\":\"a\", \"password\":\"a\"}"
-✅ Save the returned access_token.
+  Save the returned access_token.
 
 2. 📁 Create Repository
 curl -X POST http://127.0.0.1:8000/repositories/create ^
@@ -74,7 +74,7 @@ curl -X POST http://127.0.0.1:8000/repositories/1/merge_versions ^
   -F "version2_path=D:/VCS_Storage/user_1/repo_1/versions/main.py/xyz456_main.py"
 
 
-✅ 1. Commit with Snapshot
+  1. Commit with Snapshot
 
 curl -X POST http://127.0.0.1:8000/repositories/4/commit_with_snapshot ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
@@ -82,14 +82,14 @@ curl -X POST http://127.0.0.1:8000/repositories/4/commit_with_snapshot ^
   -d "message=Initial commit with snapshot" ^
   -d "filename=instr.txt"
 
-✅ 2. Commit without Snapshot
+  2. Commit without Snapshot
 curl -X POST http://127.0.0.1:8000/repositories/4/commit_without_snapshot ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
   -H "Content-Type: application/x-www-form-urlencoded" ^
   -d "message=Commit without snapshot" ^
   -d "filename=instr.txt"
 
-✅ 3. (Optional) If you went with a single route using the create_snapshot flag:
+  3. (Optional) If you went with a single route using the create_snapshot flag:
 
 curl -X POST http://127.0.0.1:8000/repositories/4/commit ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
@@ -107,7 +107,7 @@ curl -X POST http://127.0.0.1:8000/repositories/6/snapshot_repo ^
 
 curl -X GET http://127.0.0.1:8000/repositories/1/log ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs"
-✅ 4. Revert to a previous commit
+  4. Revert to a previous commit
 
 curl -X POST http://127.0.0.1:8000/repositories/4/revert/4 ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs"

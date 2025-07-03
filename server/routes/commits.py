@@ -4,7 +4,7 @@ from datetime import datetime
 import os
 import uuid
 import pathlib
-from server.models import Log, FileVersion, MergeHistory, User ,Commit, Snapshot, AccessControl
+from server.models import Log, FileVersion, MergeHistory, User ,Commit, Snapshot, AccessControl , FileVersionHistory
 from server.db import get_db
 from server.dependencies import get_current_user
 from server.schemas import UserOut
@@ -30,7 +30,7 @@ def create_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # ✅ 1. Access check
+    #   1. Access check
     access = db.query(AccessControl).filter_by(
         user_id=current_user.id,
         repository_id=repo_id
@@ -38,7 +38,7 @@ def create_commit(
     if not access or access.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # ✅ 2. Normalize path
+    #   2. Normalize path
     safe_rel_path = pathlib.Path(filename).as_posix().lstrip("/\\")
     if not safe_rel_path.endswith(".txt"):
         safe_rel_path = os.path.splitext(safe_rel_path)[0] + ".txt"
@@ -47,7 +47,7 @@ def create_commit(
     ext = ".txt"
 
 
-    # ✅ 3. If it's a text file, generate diff
+    #   3. If it's a text file, generate diff
     if ext == ".txt":
         original = ""
         if os.path.exists(full_path):
@@ -76,46 +76,6 @@ def create_commit(
             "type": "diff"
         }
 
-    # ✅ 4. If it's a non-text file (e.g., PDF, DOCX), store full snapshot
-    else:
-        commit_folder = os.path.join(
-            f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/proposed_commits",
-            os.path.dirname(safe_rel_path),
-            os.path.splitext(os.path.basename(safe_rel_path))[0]
-        )
-        os.makedirs(commit_folder, exist_ok=True)
-
-        ext = os.path.splitext(safe_rel_path)[1]
-        unique_filename = f"{uuid.uuid4()}{ext}"
-        snapshot_path = os.path.join(commit_folder, unique_filename)
-
-        # Save content to snapshot
-        try:
-            with open(snapshot_path, "w", encoding="utf-8") as f:
-                f.write(content)
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"Failed to save snapshot: {e}")
-
-        commit = Commit(
-            repo_id=repo_id,
-            author_id=current_user.id,
-            message=message,
-            original_filename=safe_rel_path,
-            versioned_filename=None,
-            snapshot_path=snapshot_path,
-            diff_text=None,
-            status="proposed"
-        )
-        db.add(commit)
-        db.commit()
-        db.refresh(commit)
-
-        return {
-            "commit_id": commit.id,
-            "message": f"Binary commit stored with snapshot for {safe_rel_path}",
-            "snapshot_file": snapshot_path,
-            "type": "snapshot"
-        }
 @router.post("/{repo_id}/revert/{commit_id}")
 def revert_commit(
     repo_id: int,
@@ -131,71 +91,75 @@ def revert_commit(
     if not commit:
         raise HTTPException(status_code=404, detail="Commit not found")
 
-    # ✅ Undo merge
+    # ──────── Case 1: Undo Merged Commit ────────
     if commit.status == "merged":
+        version_file = commit.versioned_filename
         version_path = os.path.join(
             f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions",
-            commit.versioned_filename
+            version_file
         )
+
         if os.path.exists(version_path):
             os.remove(version_path)
 
+        # Reset commit
         commit.status = "proposed"
         commit.versioned_filename = None
         db.commit()
 
+        # Remove from FileVersionHistory
+        db.query(FileVersionHistory).filter_by(commit_id=commit.id).delete()
+        db.commit()
+
+        # Log
         db.add(Log(
             user_id=current_user.id,
             repo_id=repo_id,
             commit_id=commit.id,
             action="revert",
-            description=f"Undo merge of commit #{commit.id}",
+            description=f"Reverted merged commit #{commit.id}",
             timestamp=datetime.utcnow()
         ))
         db.commit()
 
-        return {"message": f"Merged version reverted. Commit #{commit.id} is now proposed again."}
+        return {"message": f"Reverted merged commit #{commit.id}. Commit status reset to proposed."}
 
-    # ✅ Restore deleted file
+    # ──────── Case 2: Restore File from Proposed Commit ────────
     original_path = os.path.join(
         f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}",
         commit.original_filename
     )
 
     if os.path.exists(original_path):
-        raise HTTPException(status_code=400, detail="File already exists")
+        raise HTTPException(status_code=400, detail="File already exists in repo. Nothing to restore.")
 
-    content = ""
-    if commit.diff_text:
-        content = apply_diff("", commit.diff_text)
-    elif commit.snapshot_path and os.path.exists(commit.snapshot_path):
-        with open(commit.snapshot_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    else:
-        raise HTTPException(status_code=404, detail="No diff/snapshot to restore")
+    # Apply diff to empty string (simulate restoration)
+    if not commit.diff_text:
+        raise HTTPException(status_code=400, detail="No diff available to restore file")
+
+    try:
+        restored_content = apply_diff("", commit.diff_text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to apply diff: {str(e)}")
 
     os.makedirs(os.path.dirname(original_path), exist_ok=True)
     with open(original_path, "w", encoding="utf-8") as f:
-        f.write(content)
+        f.write(restored_content)
 
+    # Log
     db.add(Log(
         user_id=current_user.id,
         repo_id=repo_id,
         commit_id=commit.id,
         action="revert",
-        description=f"Restored deleted file from commit #{commit.id}",
+        description=f"Restored file from proposed commit #{commit.id}",
         timestamp=datetime.utcnow()
     ))
     db.commit()
 
-    return {"message": f"File restored from commit {commit.id}"}
+    return {"message": f"Restored file from commit #{commit.id}"}
 
 from fastapi.responses import FileResponse
-import os
-import re
-
-import os
-import re
 
 def get_next_flat_version_filename(folder: str, filename: str) -> str:
     """
@@ -228,7 +192,7 @@ def merge_multiple_commits_or_versions(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # ✅ Access check
+    #   Access check
     access = db.query(AccessControl).filter_by(
         user_id=current_user.id,
         repository_id=repo_id
@@ -244,12 +208,12 @@ def merge_multiple_commits_or_versions(
     if len(commits) != len(commit_ids):
         raise HTTPException(status_code=404, detail="Some commits not found.")
 
-    # ✅ All commits must be from the same file lineage
+    #   All commits must be from the same file lineage
     filenames = {strip_version_suffix(c.original_filename or c.versioned_filename) for c in commits}
     if len(filenames) != 1:
         raise HTTPException(status_code=400, detail="Commits must belong to the same original file.")
 
-    # ✅ Combine content from all commits (you can choose smarter merge logic)
+    #   Combine content from all commits (you can choose smarter merge logic)
     merged_content = ""
     from server.utils.diff_utils import apply_diff
 
@@ -274,7 +238,7 @@ def merge_multiple_commits_or_versions(
         merged_content += f"\n\n# Commit {commit.id}\n{content.strip()}\n"
 
 
-    # ✅ Save merged content to new version file
+    #   Save merged content to new version file
     repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
     os.makedirs(repo_folder, exist_ok=True)
 
@@ -285,7 +249,7 @@ def merge_multiple_commits_or_versions(
     with open(version_path, "w", encoding="utf-8") as out:
         out.write(merged_content)
 
-    # ✅ Register merged commit
+    #   Register merged commit
     merged_commit = Commit(
         repo_id=repo_id,
         author_id=current_user.id,
@@ -298,13 +262,29 @@ def merge_multiple_commits_or_versions(
     db.add(merged_commit)
     db.commit()
     db.refresh(merged_commit)
+    # ✅ Insert into MergeHistory if exactly 2 commits merged
+    if len(commit_ids) == 2:
+        base_commit_id = commit_ids[0]
+        merged_commit_id = commit_ids[1]
 
-    # ✅ Update all merged commits’ status
+        merge_entry = MergeHistory(
+            repo_id=repo_id,
+            base_commit_id=base_commit_id,
+            merged_commit_id=merged_commit_id,
+            result_commit_id=merged_commit.id,
+            result_filename=versioned_filename,
+            merged_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+        db.add(merge_entry)
+        db.commit()
+
+    #   Update all merged commits’ status
     for c in commits:
         c.status = "merged"
     db.commit()
 
-    # ✅ Log
+    #   Log
     log = Log(
         user_id=current_user.id,
         repo_id=repo_id,
@@ -316,6 +296,29 @@ def merge_multiple_commits_or_versions(
     db.add(log)
     db.commit()
     merged_content = merged_content.strip()
+    # 1. Determine or create FileVersion row
+    fv = db.query(FileVersion).filter_by(repo_id=repo_id, original_filename=base_filename).first()
+    if not fv:
+        fv = FileVersion(repo_id=repo_id, original_filename=base_filename, latest_version=1)
+        db.add(fv)
+        db.commit()
+        db.refresh(fv)
+    else:
+        fv.latest_version += 1
+        db.commit()
+
+    # 2. Add to FileVersionHistory
+    fvh = FileVersionHistory(
+        repo_id=repo_id,
+        original_filename=base_filename,
+        version_no=fv.latest_version,
+        commit_id=commit.id,
+        versioned_filename=versioned_filename,
+        snapshot_path=version_path,
+        merged_by=current_user.id,
+    )
+    db.add(fvh)
+    db.commit()
 
     return {
         "message": f"Merged into {versioned_filename}",
@@ -332,17 +335,17 @@ def merge_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # ✅ Access check
+    #   Access check
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can merge commits.")
 
-    # ✅ Fetch commit
+    #   Fetch commit
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit or commit.status != "proposed":
         raise HTTPException(status_code=404, detail="Commit not found or already merged")
 
-    # ✅ Get original path
+    #   Get original path
     base_filename = commit.original_filename
     if not base_filename:
         raise HTTPException(status_code=400, detail="Original filename missing")
@@ -350,7 +353,7 @@ def merge_commit(
     version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
     os.makedirs(version_dir, exist_ok=True)
     repo_root = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
-    # ✅ Prepare merged content
+    #   Prepare merged content
     content = ""
     if commit.diff_text:
         original_path = os.path.join(repo_root, commit.original_filename)
@@ -366,25 +369,20 @@ def merge_commit(
     else:
         raise HTTPException(status_code=400, detail="No valid snapshot or diff to merge.")
 
-    # ✅ Save new version
+    #   Save new version
     versioned_filename = get_next_flat_version_filename(version_dir, base_filename)
     version_path = os.path.join(version_dir, versioned_filename)
 
     with open(version_path, "w", encoding="utf-8") as f:
         f.write(content)
 
-    # ✅ Overwrite file in working directory
-    original_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}", base_filename)
-    os.makedirs(os.path.dirname(original_path), exist_ok=True)
-    with open(original_path, "w", encoding="utf-8") as f:
-        f.write(content)
 
-    # ✅ Mark commit as merged
+    #   Mark commit as merged
     commit.status = "merged"
     commit.versioned_filename = versioned_filename
     db.commit()
 
-    # ✅ Log
+    #   Log
     log = Log(
         user_id=current_user.id,
         repo_id=repo_id,
@@ -394,6 +392,29 @@ def merge_commit(
         timestamp=datetime.utcnow()
     )
     db.add(log)
+    db.commit()
+    # 1. Determine or create FileVersion row
+    fv = db.query(FileVersion).filter_by(repo_id=repo_id, original_filename=base_filename).first()
+    if not fv:
+        fv = FileVersion(repo_id=repo_id, original_filename=base_filename, latest_version=1)
+        db.add(fv)
+        db.commit()
+        db.refresh(fv)
+    else:
+        fv.latest_version += 1
+        db.commit()
+
+    # 2. Add to FileVersionHistory
+    fvh = FileVersionHistory(
+        repo_id=repo_id,
+        original_filename=base_filename,
+        version_no=fv.latest_version,
+        commit_id=commit.id,
+        versioned_filename=versioned_filename,
+        snapshot_path=version_path,
+        merged_by=current_user.id,
+    )
+    db.add(fvh)
     db.commit()
 
     return {"message": f"Commit merged as {versioned_filename}", "version_file": versioned_filename}
@@ -431,62 +452,52 @@ def preview_commit(
         raise HTTPException(status_code=404, detail="Nothing to preview")
 
     return {"content": content, "filename": commit.original_filename}
-
-@router.get("/repositories/{repo_id}/file_merge_info")
-def get_file_merge_info(
+@router.get("/{repo_id}/file_merge_info")
+def file_merge_info(
     repo_id: int,
     file_name: str,
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # Access check
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access:
-        raise HTTPException(status_code=403, detail="Access denied")
+        raise HTTPException(status_code=403, detail="Permission denied")
 
-    # Find the commit that produced this versioned file
-    result_commit = (
-        db.query(Commit)
-        .filter_by(repo_id=repo_id, versioned_filename=file_name, status="merged")
-        .first()
-    )
-    if not result_commit:
-        return {"is_merged": False}
-
-    # Check MergeHistory entry
-    merge = db.query(MergeHistory).filter_by(
+    fvh = db.query(FileVersionHistory).filter_by(
         repo_id=repo_id,
-        result_commit_id=result_commit.id
+        versioned_filename=file_name
     ).first()
 
-    if not merge:
+    if not fvh:
         return {"is_merged": False}
 
-    return {
-        "is_merged": True,
-        "commit_id": result_commit.id,
-        "sources": [
-            f"Commit #{merge.base_commit_id}",
-            f"Commit #{merge.merged_commit_id}"
-        ]
-    }
+    commit = db.query(Commit).filter_by(id=fvh.commit_id, status="merged").first()
+    if commit:
+        return {
+            "is_merged": True,
+            "commit_id": fvh.commit_id
+        }
+
+    return {"is_merged": False}
+
 
 @router.get("/{repo_id}/download_version")
 def download_version(
     repo_id: int,
     file: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: UserOut = Depends(get_current_user)  
 ):
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access:
         raise HTTPException(status_code=403, detail="Permission denied")
-
-    path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions/{file}"
+    safe_file = os.path.basename(file)
+    path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions/{safe_file}"
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="File not found")
 
-    return FileResponse(path, filename=file)
+    return FileResponse(path, filename=safe_file)
+
 
 @router.get("/{repo_id}/edit_file_text")
 def convert_to_editable_text(
@@ -533,40 +544,40 @@ def convert_versioned_file(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    # ✅ 1. Access check
+    #   1. Access check
     access = db.query(AccessControl).filter_by(
         user_id=current_user.id, repository_id=repo_id
     ).first()
     if not access:
         raise HTTPException(status_code=403, detail="Permission denied")
 
-    # ✅ 2. Ensure the file exists
-    repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
+    #   2. Ensure the file exists
+    repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
     file_path = os.path.join(repo_folder, filename)
 
     if not os.path.isfile(file_path):
         raise HTTPException(status_code=404, detail="Source .txt file not found")
 
-    # ✅ 3. Must be a .txt file
+    #   3. Must be a .txt file
     if not filename.lower().endswith(".txt"):
         raise HTTPException(status_code=400, detail="Only .txt files can be converted")
 
-    # ✅ 4. Read file content
+    #   4. Read file content
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
 
-    # ✅ 5. Build target path
+    #   5. Build target path
     base_name, _ = os.path.splitext(filename)
     target_format = target_format.lower()
-    if target_format not in ["docx", "pdf"]:
+    if target_format not in ["docx", "pdf","doc"]:
         raise HTTPException(status_code=400, detail="Unsupported target format")
 
     out_path = os.path.join(repo_folder, f"{base_name}.{target_format}")
 
-    # ✅ 6. Convert
+    #   6. Convert
     try:
         if target_format == "docx":
             doc = Document()
@@ -582,11 +593,26 @@ def convert_versioned_file(
             for line in content.splitlines():
                 pdf.multi_cell(0, 10, txt=line)
             pdf.output(out_path)
+        elif target_format == "doc":
+            doc = Document()
+            for line in content.splitlines():
+                doc.add_paragraph(line)
+            
+            # Save as .doc by renaming .docx file (Word supports it)
+            temp_path = os.path.join(repo_folder, f"{base_name}.docx")
+            doc.save(temp_path)
+            os.rename(temp_path, out_path)  # Rename to .doc
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Conversion failed: {str(e)}")
 
-    # ✅ 7. Return the converted file
-    media_type = "application/pdf" if target_format == "pdf" else "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    #   7. Return the converted file
+    media_type = {
+        "pdf": "application/pdf",
+        "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "doc": "application/msword"
+    }.get(target_format, "application/octet-stream")
+
     return FileResponse(out_path, media_type=media_type, filename=os.path.basename(out_path))
 
 @router.get("/{repo_id}/version_files")
@@ -599,7 +625,6 @@ def list_version_files(
         return []
 
     return [f for f in os.listdir(version_dir) if f.endswith(".txt")]
-
 @router.post("/{repo_id}/merge_versions")
 def merge_versions(
     repo_id: int,
@@ -608,37 +633,154 @@ def merge_versions(
     current_user: UserOut = Depends(get_current_user)
 ):
     from fastapi.responses import FileResponse
+    from server.utils.diff_utils import generate_diff, apply_diff
 
     version_files = payload.get("version_files")
     if not version_files or len(version_files) != 2:
         raise HTTPException(status_code=400, detail="Exactly 2 version files must be selected")
 
-    # Access check
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    # ✅ Access check
+    access = db.query(AccessControl).filter_by(
+        user_id=current_user.id,
+        repository_id=repo_id
+    ).first()
     if not access or access.role not in ("admin", "editor"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"
-    paths = [os.path.join(version_dir, f) for f in version_files]
+    os.makedirs(version_dir, exist_ok=True)
 
+    # ✅ Resolve paths
+    paths = [os.path.join(version_dir, f) for f in version_files]
     for path in paths:
         if not os.path.exists(path):
             raise HTTPException(status_code=404, detail=f"Version file '{path}' not found")
 
-    # Read content from both files
-    content = ""
-    try:
-        for path in paths:
-            with open(path, "r", encoding="utf-8") as f:
-                content += f.read() + "\n"
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error reading version files: {e}")
+    # ✅ Read contents
+    contents = []
+    for path in paths:
+        with open(path, "r", encoding="utf-8") as f:
+            contents.append(f.read())
 
-    # Determine base name and extension
-    merged_filename = get_next_flat_version_filename(version_dir, version_files[0])
+    # ✅ Base comparison logic
+    base1 = strip_version_suffix(version_files[0])
+    base2 = strip_version_suffix(version_files[1])
 
+    if base1 == base2:
+        base_filename = base1
+        original_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}", base_filename)
+
+        original_content = ""
+        if os.path.exists(original_path):
+            with open(original_path, "r", encoding="utf-8") as f:
+                original_content = f.read()
+
+        # ✅ Apply diffs to original content sequentially
+        merged_versions = []
+        for content in contents:
+            diff = generate_diff(original_content, content)
+            merged = apply_diff(original_content, diff)
+            merged_versions.append(merged)
+
+        # ✅ Merge diffs line-by-line without duplication
+        lines_set = set()
+        merged_lines = []
+        for text in merged_versions:
+            for line in text.splitlines():
+                clean_line = line.strip()
+                if clean_line and clean_line not in lines_set:
+                    lines_set.add(clean_line)
+                    merged_lines.append(clean_line)
+
+        merged_content = "\n".join(merged_lines)
+
+    else:
+        # ✅ If base file differs — combine both without duplication
+        lines_set = set()
+        merged_lines = []
+        for content in contents:
+            for line in content.splitlines():
+                clean_line = line.strip()
+                if clean_line and clean_line not in lines_set:
+                    lines_set.add(clean_line)
+                    merged_lines.append(clean_line)
+
+        merged_content = "\n".join(merged_lines)
+        base_filename = "merged_from_" + os.path.splitext(version_files[0])[0]+".txt"
+
+    if not merged_content.strip():
+        raise HTTPException(status_code=400, detail="Merged content is empty.")
+
+    # ✅ Save to version directory
+    merged_filename = get_next_flat_version_filename(version_dir, base_filename)
     merged_path = os.path.join(version_dir, merged_filename)
     with open(merged_path, "w", encoding="utf-8") as f:
-        f.write(content.strip())
+        f.write(merged_content)
 
-    return {"message": f"Versions merged into {merged_filename}", "versioned_filename": merged_filename}
+    # ✅ Log commit
+    merged_commit = Commit(
+        repo_id=repo_id,
+        author_id=current_user.id,
+        message=f"Merged versions {version_files[0]} and {version_files[1]}",
+        original_filename=base_filename,
+        versioned_filename=merged_filename,
+        snapshot_path=merged_path,
+        status="merged"
+    )
+    db.add(merged_commit)
+    db.commit()
+    db.refresh(merged_commit)
+
+    db.add(Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        commit_id=merged_commit.id,
+        action="merge",
+        description=f"Versions merged: {version_files}",
+        timestamp=datetime.utcnow()
+    ))
+    db.commit()
+    # 1. Determine or create FileVersion row
+    fv = db.query(FileVersion).filter_by(repo_id=repo_id, original_filename=base_filename).first()
+    if not fv:
+        fv = FileVersion(repo_id=repo_id, original_filename=base_filename, latest_version=1)
+        db.add(fv)
+        db.commit()
+        db.refresh(fv)
+    else:
+        fv.latest_version += 1
+        db.commit()
+
+    # 2. Add to FileVersionHistory
+    fvh = FileVersionHistory(
+        repo_id=repo_id,
+        original_filename=base_filename,
+        version_no=fv.latest_version,
+        commit_id=merged_commit.id,
+        versioned_filename=merged_filename,
+        snapshot_path=merged_path,
+        merged_by=current_user.id,
+    )
+    db.add(fvh)
+    db.commit()
+    # Optional: Get original commit ids if you track this
+    commit1 = db.query(Commit).filter_by(versioned_filename=version_files[0]).first()
+    commit2 = db.query(Commit).filter_by(versioned_filename=version_files[1]).first()
+
+    if commit1 and commit2:
+        merge_entry = MergeHistory(
+            repo_id=repo_id,
+            base_commit_id=commit1.id,
+            merged_commit_id=commit2.id,
+            result_commit_id=merged_commit.id,
+            result_filename=merged_filename,
+            merged_by=current_user.id,
+            timestamp=datetime.utcnow()
+        )
+        db.add(merge_entry)
+        db.commit()
+
+    return {
+        "message": f"Versions merged into {merged_filename}",
+        "versioned_filename": merged_filename
+    }

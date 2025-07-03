@@ -741,6 +741,7 @@ function mergeCommitWithOriginal(commitId, filePath) {
       <select id="target-format">
         <option value="docx">DOCX</option>
         <option value="pdf">PDF</option>
+        <option value="doc">DOC</option>
       </select>
       <br><br>
       <button onclick="convertFile()">Convert & Download</button>
