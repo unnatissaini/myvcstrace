@@ -1,23 +1,23 @@
     // Data container
-    let dashboardData = null;
-    let currentRepoId = null;
+let dashboardData = null;
+let currentRepoId = null;
 
     // Cache DOM elements
-    const contentBox = document.getElementById('content-box');
-    const navItems = document.querySelectorAll('.nav-item');
-    const createRepoPanel = document.getElementById('create-repo-panel');
-    const closeCreateBtn = document.getElementById('close-create-panel');
-    function openCreateRepoPanel() {
-    createRepoPanel.classList.add('open');
-    document.body.classList.add('panel-open'); // add class
-    createRepoPanel.setAttribute('aria-hidden', 'false');
-    }
+const contentBox = document.getElementById('content-box');
+const navItems = document.querySelectorAll('.nav-item');
+const createRepoPanel = document.getElementById('create-repo-panel');
+const closeCreateBtn = document.getElementById('close-create-panel');
+function openCreateRepoPanel() {
+  createRepoPanel.classList.add('open');
+  document.body.classList.add('panel-open'); // add class
+  createRepoPanel.setAttribute('aria-hidden', 'false');
+}
 
-    function closeCreateRepoPanel() {
-    createRepoPanel.classList.remove('open');
-    document.body.classList.remove('panel-open'); // remove class
-    createRepoPanel.setAttribute('aria-hidden', 'true');
-    }
+function closeCreateRepoPanel() {
+  createRepoPanel.classList.remove('open');
+  document.body.classList.remove('panel-open'); // remove class
+  createRepoPanel.setAttribute('aria-hidden', 'true');
+}
 
     // Fetch dashboard data once on load
     async function fetchDashboardData() {
@@ -119,13 +119,20 @@ if (!repos.length) {
   repos.forEach(repo => {
     rows += `
       <tr>
-        <td><a href="#" onclick="openRepoDashboard(${repo.id})">${repo.name}</a></td>
+        <td class="repo-name" data-description="${repo.description}"><a href="#" onclick="openRepoDashboard(${repo.id})">${repo.name}</a></td>
         <td>${repo.visibility}</td>
         <td>${repo.created_at}</td>
         <td>
           <button class="action-btn" onclick="openAccessPanel(${repo.id})">Access</button>
           <button class="action-btn" onclick="deleteRepo(${repo.id})">Delete</button>
-          <button class="action-btn" onclick="snapshotRepo(${repo.id})">Snapshot</button>
+          
+          <button class="action-btn"
+            onmouseenter="showRepoStatsTooltip(event, ${repo.id})"
+            onmouseleave="hideRepoStatsTooltip()"
+            onclick="snapshotRepo(event, ${repo.id})">
+            Snapshot
+          </button>
+
         </td>
       </tr>
     `;
@@ -142,6 +149,7 @@ if (!repos.length) {
     </table>
   `;
   contentBox.innerHTML = repoSectionHTML;
+  
 }
 
 
@@ -149,19 +157,28 @@ if (!repos.length) {
       repos.forEach(repo => {
         rows += `
           <tr>
-            <td><a href="#" onclick="openRepoDashboard(${repo.id})">${repo.name}</a>            
+            <td class="repo-name" data-description="${repo.description}">
+              <a href="#" onclick="openRepoDashboard(${repo.id})">${repo.name}</a>
+            </td>
             <td>${repo.visibility}</td>
             <td>${repo.created_at}</td>
             <td>
               <button class="action-btn" onclick="openAccessPanel(${repo.id})">Access</button>
               <button class="action-btn" onclick="deleteRepo(${repo.id})">Delete</button>
-              <button class="action-btn" onclick="snapshotRepo(${repo.id})">Snapshot</button>
+              
+              <button class="action-btn"
+                onmouseenter="showRepoStatsTooltip(event, ${repo.id})"
+                onmouseleave="hideRepoStatsTooltip()"
+                onclick="snapshotRepo(event, ${repo.id})">
+                Snapshot
+              </button>
+
             </td>
           </tr>
         `;
-        document.getElementById("access-form").addEventListener("submit", updateAccessControl);
       });
-
+           
+      
       contentBox.innerHTML = `
         <h3>Your Repositories</h3>
         <table id="repo-table">
@@ -216,6 +233,14 @@ if (!repos.length) {
             </select>
             <button type="submit">Update</button>
           </form>
+          <div style="margin-top: 1rem;">
+            <label for="visibility-toggle">Repository Visibility:</label>
+            <select id="visibility-toggle" style="margin-left: 1rem;">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+
         </div>
       `;
       loadAccessibleRepos();
@@ -224,6 +249,8 @@ if (!repos.length) {
       document.getElementById("commit-form").addEventListener("submit", commitChanges);
       document.getElementById("access-form").addEventListener("submit", updateAccessControl);
     }
+
+
     document.getElementById("access-form").addEventListener("submit", updateAccessControl);
     // Activity log rendering
     function renderActivity() {
@@ -361,19 +388,6 @@ if (!repos.length) {
           document.getElementById("file-content-box").textContent = "Error loading file.";
         }
       }
-
-      function triggerUpload() {
-        alert("Upload modal or panel will open.");
-      }
-      function triggerCreateFile() {
-        alert("Create new file modal will open.");
-      }
-      function commitFile(withSnapshot) {
-        alert("Committing file with snapshot: " + withSnapshot);
-      }
-      function triggerRevert() {
-        alert("Revert file will be triggered.");
-      }
       
     closeCreateBtn.addEventListener('click', closeCreateRepoPanel);
 
@@ -387,7 +401,7 @@ if (!repos.length) {
       const formData = new FormData();
       formData.append("name", form.name.value);
       formData.append("is_private", String(form.visibility.value === "private"));
-      formData.append("description", ""); 
+      formData.append("description", form.description.value);
 
       const fileInput = form.querySelector("#repo-file");  // ✅ correct input reference
       if (fileInput.files.length > 0) {
@@ -419,38 +433,8 @@ if (!repos.length) {
   alert("Client-side error: " + err.message);
 }
 
-/*      try {
-        const res = await fetch("/repositories/create", {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`
-          },
-          body: formData
-        });
 
-        const data = await res.json();
-
-        if (!res.ok) {
-          alert(data.detail || "Failed to create repository.");
-          return;
-        }
-
-        alert(`Repository '${data.repo_name}' created successfully!`);
-        closeCreateRepoPanel();
-        await fetchDashboardData(); // Refresh UI
-      } catch (err) {
-        console.error("Repo creation failed:", err);
-        alert("Failed to create repository.");
-      }
-      const data = await res.json();
-      console.error("Error details:", data); // ✅ see what FastAPI says
-
-      if (!res.ok) {
-        alert(data.detail || "Failed to create repository.");
-        return;
-      }
-*/
-    });
+  });
 
     // Delete repo
     async function deleteRepo(repoId) {
@@ -472,23 +456,93 @@ if (!repos.length) {
       }
     }
 
-    // Snapshot repo
-    async function snapshotRepo(repoId) {
-      const token = localStorage.getItem("token");
-      try {
-        const res = await fetch(`/repositories/${repoId}/snapshot_repo`, {
-          method: "POST",
-          headers: {
-            "Authorization": `Bearer ${token}`
-          }
-        });
-        const data = await res.json();
-        alert("Snapshot created: " + data.snapshot_id);
-      } catch (err) {
-        console.error(err);
-        alert("Failed to create snapshot.");
+    // Show tooltip on hover
+async function showRepoStatsTooltip(event, repoId) {
+  const token = localStorage.getItem("token");
+  const target = event.target;
+
+  // Remove existing tooltip
+  document.querySelectorAll('.repo-tooltip').forEach(el => el.remove());
+
+  try {
+    const statsRes = await fetch(`/repositories/${repoId}/stats`, {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (!statsRes.ok) throw new Error("Failed to fetch stats");
+
+    const stats = await statsRes.json();
+
+    const tooltip = document.createElement("div");
+    tooltip.className = "repo-tooltip";
+    tooltip.innerHTML = `
+      📁 <b>Files:</b> ${stats.file_count}<br>
+      📦 <b>Size:</b> ${stats.total_size_mb} MB<br>
+      ⏱️ <b>Est. Time:</b> ${stats.estimated_time_sec} sec
+    `;
+
+    document.body.appendChild(tooltip);
+
+    const rect = target.getBoundingClientRect();
+    tooltip.style.position = "absolute";
+    tooltip.style.left = window.scrollX + rect.left + 75 + "px";
+    tooltip.style.top = window.scrollY + rect.top + 25 + "px";
+
+  } catch (err) {
+    console.error("Tooltip error:", err);
+  }
+}
+
+// Hide tooltip on mouse leave
+function hideRepoStatsTooltip() {
+  document.querySelectorAll('.repo-tooltip').forEach(el => el.remove());
+}
+
+// Click handler for creating snapshot
+async function snapshotRepo(event, repoId) {
+  const token = localStorage.getItem("token");
+  const snapshotButton = event.target;
+
+  try {
+    const res = await fetch(`/repositories/${repoId}/snapshot_repo`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${token}`
       }
-    }
+    });
+
+    const data = await res.json();
+    console.log("Snapshot created:", data.snapshot_id);
+
+    const confirmTip = document.createElement("div");
+    confirmTip.className = "repo-tooltip";
+    confirmTip.textContent = "✅ Snapshot created!";
+    document.body.appendChild(confirmTip);
+
+    const rect = snapshotButton.getBoundingClientRect();
+    confirmTip.style.position = "absolute";
+    confirmTip.style.left = window.scrollX + rect.left + 75 + "px";
+    confirmTip.style.top = window.scrollY + rect.top + 25 + "px";
+
+    setTimeout(() => confirmTip.remove(), 1500);
+
+  } catch (err) {
+    console.error("Snapshot error:", err);
+
+    const errorTip = document.createElement("div");
+    errorTip.className = "repo-tooltip";
+    errorTip.textContent = "❌ Snapshot failed.";
+    document.body.appendChild(errorTip);
+
+    const rect = snapshotButton.getBoundingClientRect();
+    errorTip.style.position = "absolute";
+    errorTip.style.left = window.scrollX + rect.left + 75 + "px";
+    errorTip.style.top = window.scrollY + rect.top + 25 + "px";
+
+    setTimeout(() => errorTip.remove(), 2000);
+  }
+}
+
 
     // Upload file
     async function uploadFile(e) {
@@ -583,12 +637,18 @@ if (!repos.length) {
   
 });
 
-    }
+  }
 
     const accessRepoPanel = document.getElementById("access-repo-panel");
     const closeAccessBtn = document.getElementById("close-access-panel");
     async function openAccessPanel(repoId) {
         currentRepoId = repoId;
+
+        const repo = dashboardData.repos.find(r => r.id === repoId);
+        if (repo) {
+          const visibilitySelect = document.getElementById("visibility-toggle");
+          visibilitySelect.value = repo.visibility;
+        }
         accessRepoPanel.classList.add("open");
         accessRepoPanel.setAttribute("aria-hidden", "false");
         document.body.classList.add("panel-open");
@@ -632,7 +692,7 @@ if (!repos.length) {
       for (const repo of repos) {
         const row = document.createElement("tr");
         row.innerHTML = `
-          <td>
+          <td class="repo-name" data-description="${repo.description}">
             
             <a href="#" onclick="openRepoDashboard(${ repo.id })">${ repo.name }</a>
           </td>
@@ -643,5 +703,76 @@ if (!repos.length) {
         tbody.appendChild(row);
       }
     }
+    document.addEventListener('DOMContentLoaded', () => {
+      let tooltip = null;
+    
+      document.addEventListener('mouseover', (e) => {
+        const target = e.target.closest('.repo-name');
+        if (!target || !target.dataset.description) return;
+        if (tooltip) {
+          tooltip.remove();
+          tooltip = null;
+        }
+        // Create tooltip
+        tooltip = document.createElement('div');
+        tooltip.className = 'repo-tooltip';
+        tooltip.textContent = target.dataset.description;
+        document.body.appendChild(tooltip);
+        
+        // Move tooltip with cursor
+        const moveTooltip = (event) => {
+          tooltip.style.left = event.pageX + 12 + 'px';
+          tooltip.style.top = event.pageY + 12 + 'px';
+        };
+    
+        moveTooltip(e); // Set initial position
+        document.addEventListener('mousemove', moveTooltip);
+    
+        // Remove tooltip on mouse leave
+        const removeTooltip = () => {
+          if (tooltip) {
+            tooltip.remove();
+            tooltip = null;
+          }
+          document.removeEventListener('mousemove', moveTooltip);
+          target.removeEventListener('mouseleave', removeTooltip);
+        };
+    
+        target.addEventListener('mouseleave', removeTooltip, { once: true });
+      });
+      document.getElementById("visibility-toggle").addEventListener("change", async (e) => {
+        const newVisibility = e.target.value;
+        const token = localStorage.getItem("token");
+      
+        if (!currentRepoId) return alert("No repository selected");
+      
+        const confirmChange = confirm(`Change visibility to "${newVisibility.toUpperCase()}"?`);
+        if (!confirmChange) {
+          // Reset dropdown to current value from data
+          const repo = dashboardData.repos.find(r => r.id === currentRepoId);
+          e.target.value = repo.visibility;
+          return;
+        }
+      
+        try {
+          const res = await fetch(`/repositories/${currentRepoId}/toggle-visibility`, {
+            method: "PATCH",
+            headers: { "Authorization": `Bearer ${token}` },
+            body: JSON.stringify({ new_visibility: newVisibility })
+          });
+      
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.detail || "Failed to update");
+      
+          alert("✅ Visibility updated!");
+          await fetchDashboardData();
+          renderSection('report');
+          closeAccessPanel();
+        } catch (err) {
+          console.error("Visibility update failed:", err);
+          alert("❌ Could not change visibility.");
+        }
+      });
+    });
 
     

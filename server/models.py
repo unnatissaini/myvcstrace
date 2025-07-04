@@ -7,7 +7,7 @@ from datetime import datetime
 from sqlalchemy import UniqueConstraint
 from enum import Enum
 from sqlalchemy import Text
-
+from sqlalchemy import BigInteger
 
 class User(Base):
     __tablename__ = 'users'
@@ -28,7 +28,8 @@ class Repository(Base):
     owner = relationship("User", back_populates="repos")
     commits = relationship("Commit", back_populates="repository")
     access_controls = relationship("AccessControl", back_populates="repository", cascade="all, delete-orphan")
-
+    created_at = Column(DateTime, default=datetime.utcnow)
+    description = Column(Text)
 
 class Commit(Base):
     __tablename__ = "commits"
@@ -86,8 +87,8 @@ class Snapshot(Base):
     id = Column(Integer, primary_key=True, index=True)
     commit_id = Column(Integer, ForeignKey("commits.id", ondelete="CASCADE"))
     file_path = Column(String, nullable=False)      
-    content_hash = Column(String, nullable=False)  
-    size = Column(Integer)
+    content_hash = Column(String, nullable=False)      
+    size = Column(BigInteger)
     created_at = Column(DateTime, default=datetime.utcnow)
     is_deleted = Column(Boolean, default=False)    
     operation = Column(String, nullable=False, default="add")  # "add", "modify", "delete"

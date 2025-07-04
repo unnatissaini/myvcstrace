@@ -35,7 +35,7 @@ def create_commit(
         user_id=current_user.id,
         repository_id=repo_id
     ).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     #   2. Normalize path
@@ -84,7 +84,7 @@ def revert_commit(
     current_user: UserOut = Depends(get_current_user)
 ):
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
@@ -644,7 +644,7 @@ def merge_versions(
         user_id=current_user.id,
         repository_id=repo_id
     ).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     version_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions"

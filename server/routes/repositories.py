@@ -7,23 +7,20 @@ from typing import List
 from server.services.repository_service import create_commit_snapshot
 from server.services.access_control import assign_admin_access , set_user_access_level
 from server.models import Snapshot, Commit
-import hashlib
+import hashlib 
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from server.models import Repository, Log, User, AccessControl
 from server.dependencies import get_db, get_current_user, AccessControlInput
 from server.services.access_control import get_user_access_level, has_write_access, get_user_repo_access, can_read_repo, can_write_repo
-from server.schemas import DeleteRepoInput,DeleteFileInput , RepositoryUpdate ,LogOut ,UserOut , SetAccessLevelInput
+from server.schemas import DeleteRepoInput,DeleteFileInput , RepositoryUpdate ,LogOut ,UserOut , SetAccessLevelInput, Role
 from server.constants.access_levels import ADMIN, WRITE
-from server.schemas import Role
 import uuid
 import zipfile
 from server.dependencies import get_current_user
 from server.db import get_db
 from server.models import AccessControl, Log
 from pydantic import BaseModel
-import os
-from datetime import datetime
 router = APIRouter(
     prefix="/repositories",
     tags=["repositories"]
@@ -62,7 +59,8 @@ def create_repository(
     repo = Repository(
         name=name,
         owner_id=current_user.id,
-        visibility="private" if is_private else "public"
+        visibility="private" if is_private else "public",
+        description=description
     )
     db.add(repo)
     db.commit()
@@ -98,6 +96,7 @@ def create_repository(
     return {
         "repo_id": repo.id,
         "repo_name": repo.name,
+        "description": repo.description,
         "file_uploaded": file.filename if file else None,
         "saved_to": file_path if file else "No file uploaded"
     }
@@ -441,7 +440,7 @@ def create_new_file(
     current_user: UserOut = Depends(get_current_user)
 ):    
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
@@ -466,7 +465,7 @@ def create_folder(
     current_user: UserOut = Depends(get_current_user)
 ):
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"

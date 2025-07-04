@@ -3,7 +3,7 @@ from fastapi.templating import Jinja2Templates
 from server.db import get_db
 from server.models import Commit, User, Repository , Snapshot
 from passlib.context import CryptContext
-from server.schemas import RepositoryCreate
+from server.schemas import RepositoryCreate, UserOut
 from server.utils.token import create_access_token  # function to generate JWT
 from fastapi.responses import JSONResponse
 from passlib.hash import bcrypt
@@ -53,13 +53,8 @@ def login(
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     token = create_access_token(data={"sub": user.username})
-    response = RedirectResponse(
-        url="/superadmin" if username == "superadmin" else "/dashboard",
-        status_code=HTTP_303_SEE_OTHER
-    )
-    response.set_cookie(key="access_token", value=token, httponly=True)
-    return response
-    #return JSONResponse({"access_token": token, "token_type": "bearer"})
+
+    return JSONResponse({"access_token": token, "token_type": "bearer"})
 
 # Logout
 @router.get("/logout")
@@ -86,14 +81,29 @@ def dashboard(request: Request, db: Session = Depends(get_db), current_user=Depe
 
 @router.get("/api/dashboard-data")
 def dashboard_data(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    def format_date_with_suffix(dt: datetime):
+        if not dt:
+            return ""
+        day = dt.day
+        suffix = "th" if 11 <= day <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+        return f"{day}{suffix} {dt.strftime('%b %Y')}"  # Use on Windows
+
     repos = db.query(Repository).filter_by(owner_id=current_user.id).all()
     logs = db.query(Log).filter_by(user_id=current_user.id).order_by(Log.timestamp.desc()).limit(5).all()
 
     return {
         "user": {"id": current_user.id, "username": current_user.username},
-        "repos": [{"id": r.id, "name": r.name} for r in repos],
+        "repos": [{
+            "id": r.id,
+            "name": r.name,
+            "visibility": r.visibility,
+            "created_at": format_date_with_suffix(r.created_at),
+            "description": r.description
+        } for r in repos],
         "logs": [{"timestamp": str(l.timestamp), "action": l.action, "repo_id": l.repo_id} for l in logs]
     }
+
+
 def list_dir_recursive(base_path, rel_path=""):
     items = []
     full_path = os.path.join(base_path, rel_path)
@@ -150,7 +160,7 @@ def create_new_file(
 
     # Check access
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor"):
+    if not access or access.role not in ("admin", "editor","collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
     file_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/{name}"
@@ -224,7 +234,7 @@ def repo_dashboard(repo_id: int, request: Request, db: Session = Depends(get_db)
     # Step 2: Role-based access control
     if repo.owner_id != current_user.id:
         access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
-        if not access or access.role not in ("viewer", "editor", "admin"):
+        if not access or access.role not in ("viewer", "editor", "admin","collaborator"):
             raise HTTPException(status_code=403, detail="Access denied to repository")
         role = access.role
     else:
@@ -461,3 +471,48 @@ def get_commit_content(
         raise HTTPException(status_code=404, detail="No content available")
 
     return {"content": content}
+
+@router.get("/repositories/{repo_id}/stats")
+def get_repo_stats(repo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    import os
+
+    repo_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    if not os.path.exists(repo_dir):
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    total_size = 0
+    file_count = 0
+    for root, dirs, files in os.walk(repo_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            if os.path.isfile(file_path):
+                file_count += 1
+                total_size += os.path.getsize(file_path)
+
+    size_mb = total_size / (1024 * 1024)
+    # Estimate time: assume 50ms per file + 1ms per KB (just a rough model)
+    estimated_time_sec = round((file_count * 0.05 + total_size / 1024 / 1000), 2)
+
+    return {
+        "file_count": file_count,
+        "total_size_mb": round(size_mb, 2),
+        "estimated_time_sec": estimated_time_sec
+    }
+@router.patch("/repositories/{repo_id}/toggle-visibility")
+def toggle_visibility(repo_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    new_visibility = payload.get("new_visibility")
+    if new_visibility not in ["public", "private"]:
+        raise HTTPException(status_code=400, detail="Invalid visibility")
+
+    repo = db.query(Repository).filter_by(id=repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # Check permissions: only admin/owner
+    if current_user.id != repo.owner_id:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    repo.visibility = new_visibility
+    db.commit()
+
+    return {"new_visibility": new_visibility}

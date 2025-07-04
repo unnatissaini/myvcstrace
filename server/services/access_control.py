@@ -15,10 +15,10 @@ def get_user_repo_access(db: Session, user_id: int, repo_id: int) -> Optional[st
 def can_read_repo(repo: Repository, role: Optional[str]) -> bool:
     if repo.visibility == "public":
         return True
-    return role in [ "viewer", "editor", "admin"]
+    return role in [ "viewer", "editor", "admin","collaborator"]
 
 def can_write_repo(role: Optional[str]) -> bool:
-    return role in ["editor", "admin"]
+    return role in ["editor", "admin","collaborator"]
 
 def is_admin_repo(role: Optional[str]) -> bool:
     return role == "admin"

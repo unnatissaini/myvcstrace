@@ -328,3 +328,18 @@
     border: 1px solid rgba(0, 0, 0, 0.1);
   }
   
+  .repo-tooltip {
+    position: absolute;
+    background-color: rgba(51, 51, 51, 0.95);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    pointer-events: none;
+    white-space: pre-wrap; /* Allow wrapping + preserve line breaks */
+    max-width: 300px;       /* Optional: constrain width */
+    word-break: break-word; /* Wrap long words */
+    z-index: 9999;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+  
