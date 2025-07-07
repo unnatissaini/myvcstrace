@@ -1,34 +1,13 @@
-<h3>All Users</h3>
+<h2>Manage Users</h2>
 <table>
   <thead>
-    <tr><th>ID</th><th>Username</th><th>Actions</th></tr>
+    <tr>
+      <th>ID</th>
+      <th>Username</th>
+      <th>Actions</th>
+    </tr>
   </thead>
   <tbody id="user-table-body">
-    <tr><td colspan="3">Loading...</td></tr>
+    <!-- Filled dynamically -->
   </tbody>
 </table>
-
-<script>
-fetch('/api/superadmin/users')
-  .then(res => res.json())
-  .then(users => {
-    const tbody = document.getElementById('user-table-body');
-    tbody.innerHTML = '';
-    users.forEach(user => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${user.id}</td>
-          <td>${user.username}</td>
-          <td>
-            <button class="action-btn" onclick="deleteUser(${user.id})">Delete</button>
-          </td>
-        </tr>`;
-    });
-  });
-
-function deleteUser(userId) {
-  if (!confirm("Are you sure?")) return;
-  fetch(`/api/superadmin/users/${userId}`, { method: 'DELETE' })
-    .then(res => res.ok ? location.reload() : alert("Error deleting"));
-}
-</script>

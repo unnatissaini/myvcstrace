@@ -128,3 +128,9 @@ curl -X POST http://127.0.0.1:8000/repositories/10/access-control ^
   -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUwNzQ2NDc1fQ.xgFLPmBoY0YIJVR9-Di5-iDEat84p3j-jR69txkPFCs" ^
   -H "Content-Type: application/json" ^
   -d "{\"user_id\": 3, \"role\": \"editor\"}"
+
+
+
+
+curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUxNzA0MTk3fQ.t1kVZ2vQbOUM4mh4JYY2duHlTHFH_MQhNX_Z8KLdlNM" \
+"http://localhost:8000/repositories/1/file_merge_info?file_name=a_v3.txt"

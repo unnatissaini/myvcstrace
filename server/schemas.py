@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from enum import Enum
+from typing import Optional
 
 
 class FileEditRequest(BaseModel):
@@ -23,8 +24,10 @@ class LogOut(BaseModel):
     id: int
     user_id: int
     repo_id: int
-    commit_id: int
+    commit_id: Optional[int]
     action: str
+    username: str
+    repo_name: str
     timestamp: datetime
 
     class Config:

@@ -363,14 +363,14 @@ function saveFile() {
 
   // ---------------- Revert ----------------
   function revertFile() {
-    const filename = CURRENT_FILE_NAME;
+    const filename = CURRENT_FILE_NAME?.trim();
     const panel = document.getElementById("action-panel");
     const content = document.getElementById("panel-content");
-    panel.classList.add("open");
-  
     const token = localStorage.getItem("token");
-  
-    // 🔁 1. Handle trash restore if no file selected
+
+    panel.classList.add("open");
+
+    // 🔁 1. Trash restore if no file selected
     if (!filename || filename === "Select a file") {
       fetch(`/repositories/${currentRepoId}/trash_files`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -381,7 +381,7 @@ function saveFile() {
             content.innerHTML = `<p>No deleted files found in trash.</p>`;
             return;
           }
-  
+
           content.innerHTML = `
             <h3>Restore Deleted File</h3>
             <select id="restore-file-select" style="width:100%; padding: 5px;">
@@ -395,33 +395,46 @@ function saveFile() {
           content.innerHTML = `<p>Error loading trash files.</p>`;
           console.error(err);
         });
-  
+
       return;
     }
-  
-    // 🧠 2. If file is selected, check if it's a merged version
+
+    // 🧠 2. Check if it's a merged file
     fetch(`/repositories/${currentRepoId}/file_merge_info?file_name=${encodeURIComponent(filename)}`, {
       headers: { "Authorization": `Bearer ${token}` }
     })
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to get merge info.");
+        return res.json();
+      })
       .then(info => {
-        if (info.is_merged) {
-          const confirmMsg = `This file was created by merging:\n• ${info.sources.join("\n• ")}\n\nAre you sure you want to undo this merge?`;
+        if (info.is_merged && info.commit_id) {
+          const confirmMsg = `This file was created by merging.\nAre you sure you want to revert it?`;
           if (!confirm(confirmMsg)) return;
-  
-          return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` }
-          });
+
+          // ➤ Check if this was version-version merge based on filename
+          const isVersionFile = filename.includes("_v");
+
+          if (isVersionFile) {
+            return fetch(`/repositories/${currentRepoId}/revert_version/${filename}`, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+          } else {
+            return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
+              method: "POST",
+              headers: { "Authorization": `Bearer ${token}` }
+            });
+          }
         } else {
-          // ❗ If not a merged file and revert of normal commits is disabled, show warning
           alert("This file was not created via merge and cannot be reverted.");
           closeActionPanel();
-          return;
+          return null;
         }
       })
       .then(res => {
         if (!res) return;
+        if (!res.ok) throw new Error("Revert failed");
         return res.json();
       })
       .then(data => {
@@ -432,11 +445,11 @@ function saveFile() {
         }
       })
       .catch(err => {
-        console.error("Revert failed", err);
+        console.error("Revert failed:", err);
         alert("Error: " + err.message);
       });
   }
-    
+  
   function submitRestore() {
     const selectedFile = document.getElementById("restore-file-select").value;
     const token = localStorage.getItem("token");

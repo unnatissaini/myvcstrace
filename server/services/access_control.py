@@ -6,6 +6,7 @@ from server.utils.role_mapper import ROLE_TO_ACCESS
 from server.models import Repository
 from fastapi import HTTPException
 from server.schemas import Role
+from fastapi import Request
 
 
 def get_user_repo_access(db: Session, user_id: int, repo_id: int) -> Optional[str]:
@@ -35,6 +36,28 @@ def has_admin_access(level: str) -> bool:
 def get_user_access_level(db: Session, user_id: int, repo_id: int) -> Optional[str]:
     access = db.query(AccessControl).filter_by(user_id=user_id, repository_id=repo_id).first()
     return access.role if access else None
+def get_repository(
+    repo_id: int,
+    db: Session,
+    request: Request,
+    current_user: User,
+    override_superadmin: bool = True
+):
+    repo = db.query(Repository).get(repo_id)
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # ✅ Allow Superadmin override if cookie is set
+    if override_superadmin and request.cookies.get("superadmin_force_access") == "true":
+        return repo
+
+    # ✅ Normal role check...
+    if repo.visibility == "public":
+        return repo
+    access = get_user_access_level(current_user.id, repo_id, db)
+    if not access:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return repo
 
 def assign_admin_access(db: Session, user_id: int, repository_id: int):
     access_entry = AccessControl(

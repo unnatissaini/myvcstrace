@@ -35,8 +35,6 @@ def get_repository(repo_id: int, db: Session = Depends(get_db), current_user: Us
     if can_read_repo(repo, role):
         return repo
 
-   
-
 
 def compute_file_hash(file_path: str) -> str:
     hasher = hashlib.sha256()

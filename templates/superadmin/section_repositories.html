@@ -1,40 +1,15 @@
-<h3>All Repositories</h3>
+<h2>Manage Repositories</h2>
 <table>
   <thead>
-    <tr><th>ID</th><th>Name</th><th>Owner</th><th>Visibility</th><th>Actions</th></tr>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Owner</th>
+      <th>Visibility</th>
+      <th>Actions</th>
+    </tr>
   </thead>
   <tbody id="repo-table-body">
-    <tr><td colspan="5">Loading...</td></tr>
+    <!-- Filled dynamically -->
   </tbody>
 </table>
-
-<script>
-fetch('/api/superadmin/repositories')
-  .then(res => res.json())
-  .then(repos => {
-    const tbody = document.getElementById("repo-table-body");
-    tbody.innerHTML = "";
-    repos.forEach(repo => {
-      tbody.innerHTML += `
-        <tr>
-          <td>${repo.id}</td>
-          <td>${repo.name}</td>
-          <td>${repo.owner_username}</td>
-          <td>${repo.visibility}</td>
-          <td>
-            <button class="action-btn" onclick="deleteRepo(${repo.id})">Delete</button>
-            <button class="action-btn" onclick="toggleVisibility(${repo.id})">Toggle</button>
-          </td>
-        </tr>`;
-    });
-  });
-
-function deleteRepo(id) {
-  if (!confirm("Delete this repo?")) return;
-  fetch(`/api/superadmin/repositories/${id}`, { method: "DELETE" }).then(() => location.reload());
-}
-
-function toggleVisibility(id) {
-  fetch(`/api/superadmin/repositories/${id}/toggle`, { method: "POST" }).then(() => location.reload());
-}
-</script>

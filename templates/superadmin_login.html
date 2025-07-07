@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Superadmin Login</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #cfd9df, #e2ebf0);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+    form {
+      background: white;
+      padding: 2rem;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.1);
+      width: 300px;
+      display: flex;
+      flex-direction: column;
+    }
+    h2 {
+      margin-bottom: 1rem;
+      text-align: center;
+      color: #4c6a92;
+    }
+    input {
+      padding: 0.6rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+    }
+    button {
+      background: #4c6a92;
+      color: white;
+      padding: 0.6rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #3c5777;
+    }
+    .error {
+      color: red;
+      text-align: center;
+      font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body>
+  <form method="post" action="/superadmin-login">
+    <h2>Superadmin Login</h2>
+    <input type="password" name="password" placeholder="Enter password" required />
+    <button type="submit">Login</button>
+    {% if error %}
+      <div class="error">{{ error }}</div>
+    {% endif %}
+  </form>
+</body>
+</html>

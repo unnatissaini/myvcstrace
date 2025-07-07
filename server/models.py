@@ -73,13 +73,14 @@ class Log(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    repo_id = Column(Integer, ForeignKey("repositories.id", ondelete="SET NULL"), nullable=True)  # ✅ updated
+    repo_id = Column(Integer, ForeignKey("repositories.id", ondelete="SET NULL"), nullable=True)  
     commit_id = Column(Integer, ForeignKey("commits.id"), nullable=True)
     action = Column(String, nullable=False)
     timestamp = Column(DateTime, default=datetime.utcnow)
     description = Column(Text)
 
     user = relationship("User", back_populates="logs")
+    repo = relationship("Repository", backref="logs")
 
 class Snapshot(Base):
     __tablename__ = "snapshot"

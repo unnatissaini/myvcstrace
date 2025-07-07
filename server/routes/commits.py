@@ -75,7 +75,6 @@ def create_commit(
             "message": f"Text commit created with diff for {safe_rel_path}",
             "type": "diff"
         }
-
 @router.post("/{repo_id}/revert/{commit_id}")
 def revert_commit(
     repo_id: int,
@@ -83,81 +82,225 @@ def revert_commit(
     db: Session = Depends(get_db),
     current_user: UserOut = Depends(get_current_user)
 ):
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access or access.role not in ("admin", "editor","collaborator"):
+    from server.utils.diff_utils import apply_diff
+
+    # ───── 1. Access Check ─────
+    access = db.query(AccessControl).filter_by(
+        user_id=current_user.id, repository_id=repo_id
+    ).first()
+    if not access or access.role not in ("admin", "editor", "collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
 
+    # ───── 2. Fetch Commit ─────
     commit = db.query(Commit).filter_by(id=commit_id, repo_id=repo_id).first()
     if not commit:
         raise HTTPException(status_code=404, detail="Commit not found")
 
-    # ──────── Case 1: Undo Merged Commit ────────
-    if commit.status == "merged":
-        version_file = commit.versioned_filename
-        version_path = os.path.join(
-            f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions",
-            version_file
-        )
+    repo_root = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    version_dir = os.path.join(repo_root, "versions")
 
-        if os.path.exists(version_path):
+    # ───── 3. Handle Revert of Merged Commit (From Two Commits Merge) ─────
+    merge_entry = db.query(MergeHistory).filter_by(result_commit_id=commit.id).first()
+    if merge_entry and commit.status == "merged":
+        version_file = commit.versioned_filename
+        version_path = os.path.join(version_dir, version_file)
+
+        if version_file and os.path.exists(version_path):
             os.remove(version_path)
 
-        # Reset commit
         commit.status = "proposed"
         commit.versioned_filename = None
-        db.commit()
 
-        # Remove from FileVersionHistory
+        # Remove file version history
         db.query(FileVersionHistory).filter_by(commit_id=commit.id).delete()
         db.commit()
 
-        # Log
+        db.add(Log(
+            user_id=current_user.id,
+            repo_id=repo_id,
+            commit_id=commit.id,
+            action="revert_merge",
+            description=f"Reverted merge of two commits (commit #{commit.id})",
+            timestamp=datetime.utcnow()
+        ))
+        db.commit()
+
+        return {"message": f"Reverted merged version file from commit #{commit.id}"}
+
+    # ───── 4. Handle Revert of Commit Merged with Original File ─────
+    fvh = db.query(FileVersionHistory).filter_by(commit_id=commit.id).first()
+    if fvh and commit.status == "merged":
+        version_file = fvh.versioned_filename
+        version_path = os.path.join(version_dir, version_file)
+
+        if version_file and os.path.exists(version_path):
+            os.remove(version_path)
+
+        commit.status = "proposed"
+        commit.versioned_filename = None
+
+        db.query(FileVersionHistory).filter_by(commit_id=commit.id).delete()
+        db.commit()
+
+        db.add(Log(
+            user_id=current_user.id,
+            repo_id=repo_id,
+            commit_id=commit.id,
+            action="revert_merge",
+            description=f"Reverted merged commit with original file (commit #{commit.id})",
+            timestamp=datetime.utcnow()
+        ))
+        db.commit()
+
+        return {"message": f"Reverted merged commit with original file from commit #{commit.id}"}
+
+    # ───── 5. Handle Revert of Proposed Commit (diff restore) ─────
+    if commit.status == "proposed":
+        original_path = os.path.join(repo_root, commit.original_filename)
+
+        if os.path.exists(original_path):
+            raise HTTPException(status_code=400, detail="File already exists. Cannot restore.")
+
+        if not commit.diff_text:
+            raise HTTPException(status_code=400, detail="No diff available to restore")
+
+        try:
+            restored_content = apply_diff("", commit.diff_text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to apply diff: {str(e)}")
+
+        os.makedirs(os.path.dirname(original_path), exist_ok=True)
+        with open(original_path, "w", encoding="utf-8") as f:
+            f.write(restored_content)
+
         db.add(Log(
             user_id=current_user.id,
             repo_id=repo_id,
             commit_id=commit.id,
             action="revert",
-            description=f"Reverted merged commit #{commit.id}",
+            description=f"Restored file from proposed commit #{commit.id}",
             timestamp=datetime.utcnow()
         ))
         db.commit()
 
-        return {"message": f"Reverted merged commit #{commit.id}. Commit status reset to proposed."}
+        return {"message": f"Proposed commit #{commit.id} reverted. File restored."}
 
-    # ──────── Case 2: Restore File from Proposed Commit ────────
-    original_path = os.path.join(
-        f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}",
-        commit.original_filename
+    raise HTTPException(status_code=400, detail="Unsupported commit status for revert")
+@router.post("/{repo_id}/revert_version/{version_filename}")
+def revert_merged_version_file(
+    repo_id: int,
+    version_filename: str,
+    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user)
+):
+    # Ensure only admin can revert
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access or access.role != "admin":
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    # Find commit with this versioned filename
+    commit = db.query(Commit).filter_by(
+        repo_id=repo_id,
+        versioned_filename=version_filename,
+        status="merged"
+    ).first()
+
+    if not commit:
+        raise HTTPException(status_code=404, detail="No merged commit found for this version file.")
+
+    # Check if it was created via version-version merge (2 parents)
+    merge_history = db.query(MergeHistory).filter_by(result_commit_id=commit.id).first()
+    if not merge_history:
+        raise HTTPException(status_code=400, detail="This file was not created by merging two version files.")
+
+    version_path = os.path.join(
+        f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions",
+        version_filename
     )
 
-    if os.path.exists(original_path):
-        raise HTTPException(status_code=400, detail="File already exists in repo. Nothing to restore.")
+    # Delete the version file
+    if os.path.exists(version_path):
+        os.remove(version_path)
 
-    # Apply diff to empty string (simulate restoration)
-    if not commit.diff_text:
-        raise HTTPException(status_code=400, detail="No diff available to restore file")
+    # Reset status if needed
+    commit.status = "proposed"
+    commit.versioned_filename = None
+    db.commit()
 
-    try:
-        restored_content = apply_diff("", commit.diff_text)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to apply diff: {str(e)}")
+    # Delete merge history entry
+    db.query(MergeHistory).filter_by(result_commit_id=commit.id).delete()
+    db.commit()
 
-    os.makedirs(os.path.dirname(original_path), exist_ok=True)
-    with open(original_path, "w", encoding="utf-8") as f:
-        f.write(restored_content)
+    # Delete version history
+    db.query(FileVersionHistory).filter_by(commit_id=commit.id).delete()
+    db.commit()
 
     # Log
     db.add(Log(
         user_id=current_user.id,
         repo_id=repo_id,
         commit_id=commit.id,
-        action="revert",
-        description=f"Restored file from proposed commit #{commit.id}",
+        action="revert_version_merge",
+        description=f"Reverted version-version merge file {version_filename}",
         timestamp=datetime.utcnow()
     ))
     db.commit()
 
-    return {"message": f"Restored file from commit #{commit.id}"}
+    return {"message": f"Reverted version file {version_filename} created from merging two versions."}
+@router.post("/{repo_id}/revert_version")
+def revert_merged_version_file(
+    repo_id: int,
+    versioned_filename: str = Form(...),
+    db: Session = Depends(get_db),
+    current_user: UserOut = Depends(get_current_user)
+):
+    import os
+    safe_versioned_filename = os.path.basename(versioned_filename)
+
+    # Step 1: Check version history
+    fvh = db.query(FileVersionHistory).filter_by(
+        repo_id=repo_id,
+        versioned_filename=safe_versioned_filename
+    ).first()
+
+    if not fvh:
+        raise HTTPException(404, "Version file not found in version history")
+
+    if not fvh.commit_id:
+        raise HTTPException(400, "This version is not linked to any commit")
+
+    # Step 2: Check commit status
+    commit = db.query(Commit).filter_by(id=fvh.commit_id).first()
+    if not commit or commit.status != "merged":
+        raise HTTPException(400, "This file was not created via merge and cannot be reverted.")
+
+    # Step 3: Delete the actual file
+    version_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/versions", safe_versioned_filename)
+    if os.path.exists(version_path):
+        os.remove(version_path)
+
+    # Step 4: Reset commit
+    commit.status = "proposed"
+    commit.versioned_filename = None
+    db.commit()
+
+    # Step 5: Clean up version history
+    db.query(FileVersionHistory).filter_by(commit_id=commit.id).delete()
+    db.commit()
+
+    # Step 6: Log
+    db.add(Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        commit_id=commit.id,
+        action="revert",
+        description=f"Reverted versioned file {safe_versioned_filename}",
+        timestamp=datetime.utcnow()
+    ))
+    db.commit()
+
+    return {"message": f"Reverted version file {safe_versioned_filename}"}
+
 
 from fastapi.responses import FileResponse
 

@@ -1,10 +1,13 @@
+<!-- /templates/superadmin_dashboard.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Superadmin Dashboard</title>
-  <link rel="stylesheet" href="/static/css/superadmin.css" />
+  <link rel="stylesheet" href="/static/css/d_light.css" />
+  <script src="/static/js/superadmin.js" defer></script>
+
 </head>
 <body>
 
@@ -15,8 +18,9 @@
     <div class="nav-item" onclick="loadSection(this, 'users')">Users</div>
     <div class="nav-item" onclick="loadSection(this, 'repositories')">Repositories</div>
     <div class="nav-item" onclick="loadSection(this, 'logs')">Activity Logs</div>
-    <div class="nav-item" onclick="loadSection(this, 'security')">Security</div>
-    <div class="nav-item" onclick="loadSection(this, 'settings')">System Settings</div>
+    <div class="nav-item" onclick="loadSection(this, 'reset_password')">Reset Password</div>
+    <div class="nav-item" onclick="loadSection(this, 'register')">Register</div>
+    <div class="nav-item" onclick="logout()">Logout</div>
   </div>
 
   <!-- Main content -->
@@ -26,28 +30,6 @@
       <p>Select a section from the left to begin monitoring your kingdom.</p>
     </div>
   </div>
-
-  <script>
-    async function loadSection(clickedItem, sectionName) {
-      // Highlight selected nav item
-      document.querySelectorAll(".nav-item").forEach(item => item.classList.remove("active"));
-      clickedItem.classList.add("active");
-
-      try {
-        const res = await fetch(`/superadmin/section/${sectionName}`);
-        if (!res.ok) throw new Error("Failed to load section");
-        const html = await res.text();
-        document.getElementById("main-display").innerHTML = html;
-      } catch (err) {
-        document.getElementById("main-display").innerHTML = `<p>Error loading section: ${err.message}</p>`;
-      }
-    }
-
-    // Load overview by default
-    window.addEventListener('DOMContentLoaded', () => {
-      document.querySelector('.nav-item.active').click();
-    });
-  </script>
 
 </body>
 </html>
