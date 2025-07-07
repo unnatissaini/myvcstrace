@@ -367,10 +367,10 @@ function saveFile() {
     const panel = document.getElementById("action-panel");
     const content = document.getElementById("panel-content");
     const token = localStorage.getItem("token");
-
+  
     panel.classList.add("open");
-
-    // 🔁 1. Trash restore if no file selected
+  
+    // 1️⃣ If no file selected → show trash
     if (!filename || filename === "Select a file") {
       fetch(`/repositories/${currentRepoId}/trash_files`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -381,7 +381,7 @@ function saveFile() {
             content.innerHTML = `<p>No deleted files found in trash.</p>`;
             return;
           }
-
+  
           content.innerHTML = `
             <h3>Restore Deleted File</h3>
             <select id="restore-file-select" style="width:100%; padding: 5px;">
@@ -395,11 +395,11 @@ function saveFile() {
           content.innerHTML = `<p>Error loading trash files.</p>`;
           console.error(err);
         });
-
+  
       return;
     }
-
-    // 🧠 2. Check if it's a merged file
+  
+    // 2️⃣ File selected → check if it's merged
     fetch(`/repositories/${currentRepoId}/file_merge_info?file_name=${encodeURIComponent(filename)}`, {
       headers: { "Authorization": `Bearer ${token}` }
     })
@@ -409,44 +409,49 @@ function saveFile() {
       })
       .then(info => {
         if (info.is_merged && info.commit_id) {
-          const confirmMsg = `This file was created by merging.\nAre you sure you want to revert it?`;
+          const confirmMsg = `This file was created by merging.\nDo you want to revert it?`;
           if (!confirm(confirmMsg)) return;
-
-          // ➤ Check if this was version-version merge based on filename
+  
           const isVersionFile = filename.includes("_v");
-
-          if (isVersionFile) {
-            return fetch(`/repositories/${currentRepoId}/revert_version/${filename}`, {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${token}` }
+  
+          const revertUrl = isVersionFile
+            ? `/repositories/${currentRepoId}/revert_version/${filename}`
+            : `/repositories/${currentRepoId}/revert/${info.commit_id}`;
+  
+          // ✅ Trigger appropriate revert and exit
+          fetch(revertUrl, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` }
+          })
+            .then(res => {
+              if (!res.ok) throw new Error("Revert failed");
+              return res.json();
+            })
+            .then(data => {
+              alert(data.message || "Revert successful");
+              closeActionPanel();
+              viewFile(currentRepoId, filename);
+            })
+            .catch(err => {
+              console.error("Revert failed:", err);
+              alert("Error: " + err.message);
             });
-          } else {
-            return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
-              method: "POST",
-              headers: { "Authorization": `Bearer ${token}` }
-            });
-          }
-        } else {
-          alert("This file was not created via merge and cannot be reverted.");
-          closeActionPanel();
-          return null;
+  
+          return; // ✅ Prevent further execution
         }
-      })
-      .then(res => {
-        if (!res) return;
-        if (!res.ok) throw new Error("Revert failed");
-        return res.json();
-      })
-      .then(data => {
-        if (data) {
-          alert(data.message || "Revert successful");
-          closeActionPanel();
-          viewFile(currentRepoId, filename);
-        }
+  
+        // 3️⃣ Only reached if NOT a merged file
+        content.innerHTML = `
+          <h3>Revert File: ${filename}</h3>
+          <p>This file is not a merged file. You can manually revert to a previous commit by providing its ID.</p>
+          <input type="number" id="revert-commit-id" placeholder="Enter commit ID" style="width:100%; padding: 6px;" />
+          <br><br>
+          <button onclick="submitRevert()">Revert to Commit</button>
+        `;
       })
       .catch(err => {
-        console.error("Revert failed:", err);
-        alert("Error: " + err.message);
+        console.error("Merge info fetch failed:", err);
+        alert("Could not determine merge info.");
       });
   }
   

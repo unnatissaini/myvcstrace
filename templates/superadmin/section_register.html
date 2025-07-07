@@ -1,15 +1,16 @@
-<h2>Register New User</h2>
-<form id="register-form">
-  <label>Username</label>
-  <input type="text" name="username" required />
+<div class="panel-section">
+  <h2 class="section-title">🔐 Register New User</h2>
+  <form id="register-form" class="form-glass">
+    <label for="username">Username</label>
+    <input type="text" name="username" id="username" required />
 
-  <label>Password</label>
-  <input type="password" name="password" required />
+    <label for="password">Password</label>
+    <input type="password" name="password" id="password" required />
 
-  <button type="submit">Register</button>
-</form>
-
-<div id="register-result" style="margin-top: 1rem;"></div>
+    <button type="submit">Register</button>
+  </form>
+  <div id="register-result" class="form-result"></div>
+</div>
 
 <script>
 document.getElementById("register-form").addEventListener("submit", async (e) => {

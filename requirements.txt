@@ -134,3 +134,45 @@ curl -X POST http://127.0.0.1:8000/repositories/10/access-control ^
 
 curl -H "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhIiwiZXhwIjoxNzUxNzA0MTk3fQ.t1kVZ2vQbOUM4mh4JYY2duHlTHFH_MQhNX_Z8KLdlNM" \
 "http://localhost:8000/repositories/1/file_merge_info?file_name=a_v3.txt"
+
+
+
+
+User
+ ├── 1:N ── Repository (owner_id)
+ ├── 1:N ── AccessControl
+ ├── 1:N ── Log
+ ├── 1:N ── Commit (author_id)
+ └── 1:N ── FileVersionHistory (merged_by)
+
+Repository
+ ├── 1:N ── Commit
+ ├── 1:N ── AccessControl
+ ├── 1:N ── Log
+ ├── 1:N ── FileVersion
+ └── 1:N ── FileVersionHistory
+
+Commit
+ ├── 1:1 ── Snapshot
+ ├── 1:N ── Commit (parent → children)
+ ├── N:1 ── Repository
+ └── N:1 ── User (author)
+
+AccessControl
+ └── N:1 ── User
+ └── N:1 ── Repository
+
+FileVersion
+ └── N:1 ── Repository
+
+FileVersionHistory
+ ├── N:1 ── Repository
+ ├── N:1 ── Commit
+ └── N:1 ── User (merged_by)
+
+MergeHistory
+ └── N:1 ── Repository
+ ├── FK ── base_commit_id
+ ├── FK ── merged_commit_id
+ ├── FK ── result_commit_id
+ └── FK ── merged_by (User)
