@@ -1,31 +1,32 @@
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 from server.db import get_db
-from server.models import Commit, User, Repository , Snapshot
+from server.models import Commit, User, Repository , Snapshot, AccessControl, Log
 from passlib.context import CryptContext
 from server.schemas import RepositoryCreate, UserOut
 from server.utils.token import create_access_token  # function to generate JWT
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse , RedirectResponse , FileResponse
 from passlib.hash import bcrypt
 from fastapi import  FastAPI, Request, Form, Depends, status , HTTPException , APIRouter
-from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
-from server.dependencies import get_current_user , RepositoryAccessOut
+from server.dependencies import get_current_user , RepositoryAccessOut, get_current_user_optional
 from sqlalchemy.orm import Session
-import hashlib
-from server.models import Log
-import os
-import uuid
-import traceback
-from typing import List
-from server.models import AccessControl
+import os, mimetypes
+from typing import List, Optional
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 from pydantic import BaseModel
 from server.services.access_control import get_user_access_level
 from datetime import datetime
 from server.utils.diff_utils import apply_diff
 from starlette.status import HTTP_303_SEE_OTHER
+from fastapi import APIRouter, Depends, HTTPException
+from datetime import datetime
+from server.utils.file_parser import extract_text_from_file  # <- add this
+from server.utils.file_parser import extract_text_from_file  # <- add this
+from sqlalchemy import or_
+
+
 class NewFile(BaseModel):
     name: str
     content: str = ""
@@ -133,18 +134,34 @@ def get_file_tree(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
-    if not access:
-        raise HTTPException(status_code=403, detail="No access to this repository.")
+    # Get the repository
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
 
-    repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
+    # If user is owner
+    if repo.owner_id == current_user.id:
+        owner_id = current_user.id
+
+    # If repo is private
+    elif repo.visibility == "private":
+        access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+        if not access or access.role not in ("viewer", "editor", "admin", "collaborator"):
+            raise HTTPException(status_code=403, detail="Access denied to private repository")
+        owner_id = repo.owner_id  # use actual owner path for file access
+
+    # If repo is public and user is not owner
+    else:
+        owner_id = repo.owner_id  # public repo is viewable
+
+    # Construct correct file path
+    repo_path = f"D:/VCS_Storage/user_{owner_id}/repo_{repo_id}"
     if not os.path.exists(repo_path):
         return []
 
     tree = list_dir_recursive(repo_path)
-    #print("\n\n=== TREE OUTPUT ===")
-    #print(tree)
     return tree
+
 @router.post("/repositories/{repo_id}/files")
 def create_new_file(
     repo_id: int,
@@ -172,37 +189,39 @@ def create_new_file(
     return {"message": "File created", "filename": name}
 
 
-from server.utils.file_parser import extract_text_from_file  # <- add this
-import mimetypes
-from fastapi.responses import FileResponse, PlainTextResponse
-import mimetypes
-from fastapi.responses import FileResponse
 
 @router.get("/repositories/{repo_id}/file")
 def get_file_content(
     repo_id: int,
     name: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_current_user_optional)
 ):
-    # 1. Access check
-    access = db.query(AccessControl).filter_by(
-        user_id=current_user.id,
-        repository_id=repo_id
-    ).first()
-    if not access:
-        raise HTTPException(status_code=403, detail="No access to this repository.")
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
 
-    # 2. File path
-    file_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}/{name}"
+    # 🔐 Access logic
+    if repo.visibility == "private":
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Login required for private repository")
+        if repo.owner_id != current_user.id:
+            access = db.query(AccessControl).filter_by(
+                user_id=current_user.id,
+                repository_id=repo_id
+            ).first()
+            if not access:
+                raise HTTPException(status_code=403, detail="No access to this private repository")
+
+    # 📁 File path
+    file_path = f"D:/VCS_Storage/user_{repo.owner_id}/repo_{repo_id}/{name}"
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
 
-    # 3. Detect MIME
+    # 📄 Determine content type
     mime_type, _ = mimetypes.guess_type(file_path)
     ext = os.path.splitext(name)[1].lower()
 
-    # 4. Handle .pdf/.doc/.docx with text extraction
     if ext in [".pdf", ".doc", ".docx"]:
         try:
             content = extract_text_from_file(file_path)
@@ -210,11 +229,9 @@ def get_file_content(
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to extract content: {str(e)}")
 
-    # 5. Binary files → serve directly
     if mime_type and not mime_type.startswith("text"):
         return FileResponse(file_path, media_type=mime_type, filename=os.path.basename(name))
 
-    # 6. Text files
     try:
         with open(file_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -232,13 +249,22 @@ def repo_dashboard(repo_id: int, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="Repository not found")
 
     # Step 2: Role-based access control
-    if repo.owner_id != current_user.id:
-        access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
-        if not access or access.role not in ("viewer", "editor", "admin","collaborator"):
-            raise HTTPException(status_code=403, detail="Access denied to repository")
-        role = access.role
+    if repo.visibility == "private":
+        if repo.owner_id != current_user.id:
+            access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
+            if not access or access.role not in ("viewer", "editor", "admin", "collaborator"):
+                raise HTTPException(status_code=403, detail="Access denied to private repository")
+            role = access.role
+        else:
+            role = "owner"
     else:
-        role = "owner"
+        # Public repository: anyone can view
+        if repo.owner_id == current_user.id:
+            role = "owner"
+        else:
+            access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
+            role = access.role if access else "guest"  # guest for public view-only access
+
 
     # Step 3: Load files (excluding merged commits — handled in file list JS)
     repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
@@ -257,8 +283,6 @@ def repo_dashboard(repo_id: int, request: Request, db: Session = Depends(get_db)
         "role": role  # Optional: use in frontend to conditionally show buttons
     })
 
-from fastapi import Form
-from fastapi.responses import RedirectResponse
 
 @router.post("/repositories/{repo_id}/open", response_class=RedirectResponse)
 def open_repo_dashboard(repo_id: int, token: str = Form(...)):
@@ -306,7 +330,6 @@ async def get_accessible_repositories(
         for repo, role in sorted_results
     ]
 
-from sqlalchemy import func, or_
 
 def build_commit_tree(commits):
     tree = {}
@@ -371,21 +394,32 @@ def get_user_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    role = get_user_access_level(db, user_id=current_user.id, repo_id=repo_id)
-    if not role:
-        raise HTTPException(status_code=403, detail="No access to this repository.")
+    # Fetch the repository
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    # If user is the owner
+    if repo.owner_id == current_user.id:
+        return {"role": "owner"}
+
+    # If repo is private, check access
+    if repo.visibility == "private":
+        access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
+        if not access or access.role not in ("viewer", "editor", "admin", "collaborator"):
+            raise HTTPException(status_code=403, detail="No access to this private repository.")
+        return {"role": access.role}
+
+    # If public and not owner, check if access is defined; else default to guest
+    access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
+    if access:
+        return {"role": access.role}
     
-    return {"role": role}
+    return {"role": "guest"}  # default role for public repo with no access assigned
 
 
-from pydantic import BaseModel
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
-from datetime import datetime
-import os
-from server.db import get_db
-from server.models import AccessControl, Log
-from server.dependencies import get_current_user
+
+
 
 
 class FileEditRequest(BaseModel):
@@ -474,7 +508,6 @@ def get_commit_content(
 
 @router.get("/repositories/{repo_id}/stats")
 def get_repo_stats(repo_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    import os
 
     repo_dir = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
     if not os.path.exists(repo_dir):
@@ -498,21 +531,49 @@ def get_repo_stats(repo_id: int, db: Session = Depends(get_db), current_user: Us
         "total_size_mb": round(size_mb, 2),
         "estimated_time_sec": estimated_time_sec
     }
-@router.patch("/repositories/{repo_id}/toggle-visibility")
-def toggle_visibility(repo_id: int, payload: dict, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
-    new_visibility = payload.get("new_visibility")
-    if new_visibility not in ["public", "private"]:
-        raise HTTPException(status_code=400, detail="Invalid visibility")
 
-    repo = db.query(Repository).filter_by(id=repo_id).first()
+class VisibilityUpdate(BaseModel):
+    new_visibility: str
+
+
+@router.patch("/repositories/{repo_id}/toggle-visibility")
+def toggle_visibility(
+    repo_id: int,
+    update: VisibilityUpdate,   # ✅ use Pydantic model
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
     if not repo:
         raise HTTPException(status_code=404, detail="Repository not found")
 
-    # Check permissions: only admin/owner
-    if current_user.id != repo.owner_id:
-        raise HTTPException(status_code=403, detail="Not allowed")
+    if repo.owner_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to change visibility")
 
-    repo.visibility = new_visibility
+    if update.new_visibility not in ["public", "private"]:
+        raise HTTPException(status_code=400, detail="Invalid visibility option")
+
+    repo.visibility = update.new_visibility
     db.commit()
+    return {"detail": f"Visibility set to {repo.visibility}"}
+@router.get("/users/{user_id}/log")
+def get_user_log(user_id: int, db: Session = Depends(get_db)):
+    logs = (
+        db.query(Log, User.username)
+        .join(User, Log.user_id == User.id)
+        .filter(Log.user_id == user_id)
+        .order_by(Log.timestamp.desc())
+        .limit(50)
+        .all()
+    )
 
-    return {"new_visibility": new_visibility}
+    return [
+        {
+            "timestamp": log.timestamp,
+            "action": log.action,
+            "repo_id": log.repo_id,
+            "user_id": log.user_id,
+            "username": username,
+        }
+        for log, username in logs
+    ]

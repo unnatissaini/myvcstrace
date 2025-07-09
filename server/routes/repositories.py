@@ -1,13 +1,11 @@
 from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException ,Body
 from sqlalchemy.orm import Session
 from server.db import get_db
-import shutil
-import os
+import shutil , zipfile, os , uuid ,hashlib 
 from typing import List
 from server.services.repository_service import create_commit_snapshot
 from server.services.access_control import assign_admin_access , set_user_access_level
 from server.models import Snapshot, Commit
-import hashlib 
 from datetime import datetime
 from sqlalchemy.exc import IntegrityError
 from server.models import Repository, Log, User, AccessControl
@@ -15,10 +13,7 @@ from server.dependencies import get_db, get_current_user, AccessControlInput
 from server.services.access_control import get_user_access_level, has_write_access, get_user_repo_access, can_read_repo, can_write_repo
 from server.schemas import DeleteRepoInput,DeleteFileInput , RepositoryUpdate ,LogOut ,UserOut , SetAccessLevelInput, Role
 from server.constants.access_levels import ADMIN, WRITE
-import uuid
-import zipfile
 from server.dependencies import get_current_user
-from server.db import get_db
 from server.models import AccessControl, Log
 from pydantic import BaseModel
 router = APIRouter(
@@ -141,12 +136,6 @@ def get_logs(repo: Repository = Depends(get_repository), db: Session = Depends(g
 
 
 
-@router.get("/users/{user_id}/log", response_model=List[LogOut])
-def get_user_log(user_id: int, db: Session = Depends(get_db)):
-    logs = db.query(Log).filter(Log.user_id == user_id).order_by(Log.timestamp.desc()).all()
-    return logs
-
-
 @router.put("/{repo_id}")
 def update_repository(
     repo_id: int,
@@ -222,7 +211,6 @@ def delete_repository(
 
 class DeleteFileRequest(BaseModel):
     file_path: str  # relative path from repo root
-import shutil
 
 @router.delete("/{repo_id}/file")
 def delete_file(
@@ -231,7 +219,7 @@ def delete_file(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
-    # Access check (same as before)
+   
     access = db.query(AccessControl).filter_by(
         user_id=current_user.id,
         repository_id=repo_id
@@ -354,6 +342,10 @@ def update_access_control(
     if repo.owner_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the owner can grant access")
 
+    # Prevent the owner from changing their own access
+    if access.user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="You cannot change your own access role")
+
     # Check if access already exists
     existing = db.query(AccessControl).filter_by(
         repository_id=repo_id,
@@ -371,6 +363,7 @@ def update_access_control(
 
     db.commit()
     return {"detail": "Access updated successfully"}
+
 
 
 @router.post("/{repo_id}/snapshot_repo")
@@ -427,7 +420,6 @@ def snapshot_whole_repository(
         "size": snapshot.size
     }
 
-from fastapi import Form
 
 @router.post("/{repo_id}/create_file")
 def create_new_file(
@@ -472,3 +464,30 @@ def create_folder(
 
     return {"message": "Folder created", "folder": filename}
 
+
+def format_date(date: datetime) -> str:
+    day = date.day
+    suffix_str = suffix(day)
+    formatted_date = date.strftime(f"%b %Y")  # Jan 2025
+    return f"{day}{suffix_str} {formatted_date}"  # e.g., 1st Jan 2025
+
+def suffix(day: int) -> str:
+    if 11 <= day <= 13:
+        return "th"
+    return {1: "st", 2: "nd", 3: "rd"}.get(day % 10, "th")
+
+
+@router.get("/public-repositories")
+def get_public_repositories(db: Session = Depends(get_db)):
+    public_repos = db.query(Repository).filter(Repository.visibility == "public").all()
+
+    return [
+        {
+            "id": repo.id,
+            "name": repo.name,
+            "description": repo.description or "—",
+            "owner": repo.owner.username,
+            "created_at": format_date(repo.created_at), 
+        }
+        for repo in public_repos
+    ]

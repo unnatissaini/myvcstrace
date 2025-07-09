@@ -420,4 +420,49 @@
     color: #1a3e72;
     font-weight: 600;
   }
+  #activity-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
   
+  #activity-log-table th,
+  #activity-log-table td {
+    border: 1px solid #ccc;
+    padding: 0.6rem;
+    text-align: left;
+  }
+  
+  #activity-log-table th {
+    background-color: #e5e9f0;
+  }
+  
+  #activity-log-table tr:nth-child(even) {
+    background-color: #f6f8fa;
+  }
+  #log-list, #activity-table {
+    max-height: none;
+    overflow: visible;
+  }
+
+.suggestion-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #ccc;
+  max-height: 150px;
+  overflow-y: auto;
+  background: #fff;
+  position: absolute;
+  z-index: 10;
+  width: 80%;
+}
+
+.suggestion-list li {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.suggestion-list li:hover {
+  background-color: #f0f0f0;
+}

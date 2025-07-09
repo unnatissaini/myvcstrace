@@ -9,6 +9,8 @@
       <th>Actions</th>
     </tr>
   </thead>
+  <input type="text" id="search-repo" placeholder="Search Repositories..." oninput="filterTable('repo-table-body', this.value)">
+
   <tbody id="repo-table-body">
     <!-- Filled dynamically -->
   </tbody>

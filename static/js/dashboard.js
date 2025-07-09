@@ -67,6 +67,9 @@ function closeCreateRepoPanel() {
         case 'activity':
           renderActivity();
           break;
+          case 'public':
+          renderPublicRepos(); 
+          break;
         default:
           contentBox.innerHTML = "<p>Section not found.</p>";
       }
@@ -102,7 +105,47 @@ function closeCreateRepoPanel() {
 
       document.getElementById('btn-create-repo').addEventListener('click', openCreateRepoPanel);
     }
-
+    async function renderPublicRepos() {
+      const token = localStorage.getItem("token");
+      try {
+        const res = await fetch("/repositories/public-repositories", {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+    
+        if (!res.ok) throw new Error("Failed to fetch public repos");
+    
+        const publicRepos = await res.json();
+    
+        let rows = '';
+        publicRepos.forEach(repo => {
+          rows += `
+            <tr>
+              <td><a href="#" onclick="openRepoDashboard(${repo.id})">${repo.name}</a></td>
+              <td>${repo.owner}</td>
+              <td>${repo.created_at}</td>
+              <td>${repo.description || "—"}</td>
+            </tr>
+          `;
+        });
+    
+        contentBox.innerHTML = `
+          <h3>🌐 Public Repositories</h3>
+          <input type="text" placeholder="Search Public Repositories..." oninput="filterTable('public-repo-table', this.value)">
+          <table id="public-repo-table">
+            <thead>
+              <tr><th>Name</th><th>Owner</th><th>Created</th><th>Description</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } catch (err) {
+        console.error("Error loading public repos:", err);
+        contentBox.innerHTML = "<p>Failed to load public repositories.</p>";
+      }
+    }
+    
     // Render Repos table
     function renderRepos() {
       closeCreateRepoPanel();
@@ -164,6 +207,7 @@ if (!repos.length) {
             <td>${repo.created_at}</td>
             <td>
               <button class="action-btn" onclick="openAccessPanel(${repo.id})">Access</button>
+              <button class="action-btn" onclick="toggleVisibility(${repo.id})">Visibility</button>
               <button class="action-btn" onclick="deleteRepo(${repo.id})">Delete</button>
               
               <button class="action-btn"
@@ -181,6 +225,7 @@ if (!repos.length) {
       
       contentBox.innerHTML = `
         <h3>Your Repositories</h3>
+        <input type="text" placeholder="Search Repositories..." oninput="filterTable('accessible-repos', this.value)">
         <table id="repo-table">
           <thead>
             <tr>
@@ -189,7 +234,10 @@ if (!repos.length) {
           </thead>
           <tbody>${rows}</tbody>
         </table>
+        <br><br>
         <h3>Accessible Repositories</h3>
+        <input type="text" placeholder="Search Repositories..." oninput="filterTable('accessible-repos', this.value)">
+
         <table id="accessible-repos">
           <thead>
             <tr>
@@ -225,7 +273,9 @@ if (!repos.length) {
         <div id="access-section" style="display:none; margin-top: 2rem;">
           <h4>Add Collaborator</h4>
           <form id="access-form">
-            <input name="user_id" placeholder="User ID" required />
+          <label for="user-search">User</label>
+          <input type="text" id="user-search" name="user_id" autocomplete="off" placeholder="Type username or ID" required />
+          <ul id="user-suggestions" class="suggestion-list"></ul>          
             <select name="role">
               <option value="viewer">Viewer</option>
               <option value="collaborator">Collaborator</option>
@@ -249,29 +299,151 @@ if (!repos.length) {
       document.getElementById("commit-form").addEventListener("submit", commitChanges);
       document.getElementById("access-form").addEventListener("submit", updateAccessControl);
     }
-
+    function filterTable(tbodyId, searchTerm) {
+      const filter = searchTerm.toLowerCase();
+      const tbody = document.getElementById(tbodyId);
+      const rows = tbody.querySelectorAll("tr");
+    
+      rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(filter)) {
+          row.style.display = "";
+        } else {
+          row.style.display = "none";
+        }
+      });
+    }
+    
 
     document.getElementById("access-form").addEventListener("submit", updateAccessControl);
+    function formatPrettyDate(dateString) {
+      const date = new Date(dateString);
+    
+      const day = date.getDate();
+      const suffix = (d) => {
+        if (d > 3 && d < 21) return 'th';
+        switch (d % 10) {
+          case 1: return 'st';
+          case 2: return 'nd';
+          case 3: return 'rd';
+          default: return 'th';
+        }
+      };
+    
+      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                      "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    
+      const hours = date.getHours();
+      const minutes = date.getMinutes();
+      const ampm = hours >= 12 ? "PM" : "AM";
+      const formattedHour = hours % 12 || 12;
+      const formattedMinute = minutes.toString().padStart(2, '0');
+    
+      return `${day}${suffix(day)} ${months[date.getMonth()]} ${date.getFullYear()} ${formattedHour}:${formattedMinute} ${ampm}`;
+    }
+    function getRepoNameById(id) {
+      const repo = dashboardData.repos.find(r => r.id === id);
+      return repo ? repo.name : `Repo ${id}`;
+    }
+    
     // Activity log rendering
-    function renderActivity() {
+    async function renderActivity() {
       closeCreateRepoPanel();
-      const logs = dashboardData.logs;
-
-      if (!logs.length) {
-        contentBox.innerHTML = `<p>No activity logs available.</p>`;
+    
+      const token = localStorage.getItem("token");
+      if (!token) return window.location.href = "/login";
+    
+      const userId = dashboardData?.user?.id;
+      if (!userId) {
+        contentBox.innerHTML = `<p>User not found.</p>`;
         return;
       }
-
-      let listItems = '';
-      logs.forEach(log => {
-        listItems += `<li>${log.timestamp}: ${log.action} on repo ${log.repo_id}</li>`;
-      });
-
-      contentBox.innerHTML = `
-        <h3>Recent Activity</h3>
-        <ul id="log-list">${listItems}</ul>
-      `;
+    
+      try {
+        const res = await fetch(`/users/${userId}/log`, {
+          headers: {
+            "Authorization": `Bearer ${token}`
+          }
+        });
+    
+        if (!res.ok) throw new Error("Failed to fetch activity logs.");
+    
+        const logs = await res.json();
+        if (!logs.length) {
+          contentBox.innerHTML = `<p>No activity logs available.</p>`;
+          return;
+        }
+    
+        // Unique actions and repo names for filters
+        const actions = [...new Set(logs.map(log => log.action))];
+        const repoOptions = dashboardData.repos.map(repo => ({ id: repo.id, name: repo.name }));
+    
+        contentBox.innerHTML = `
+          <h3>Recent Activity</h3>
+          
+          <div style="margin-bottom: 1rem;">
+            <label for="filter-action">Filter by Action:</label>
+            <select id="filter-action">
+              <option value="">All</option>
+              ${actions.map(a => `<option value="${a}">${a}</option>`).join("")}
+            </select>
+    
+            <label for="filter-repo" style="margin-left: 2rem;">Filter by Repository:</label>
+            <select id="filter-repo">
+              <option value="">All</option>
+              ${repoOptions.map(repo => `<option value="${repo.id}">${repo.name}</option>`).join("")}
+            </select>
+          </div>
+    
+          <table id="activity-table" class="styled-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Repository</th>
+                <th>Actor</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        `;
+    
+        const tbody = document.querySelector("#activity-table tbody");
+        const actionFilter = document.getElementById("filter-action");
+        const repoFilter = document.getElementById("filter-repo");
+    
+        function renderFilteredLogs() {
+          const selectedAction = actionFilter.value;
+          const selectedRepo = parseInt(repoFilter.value) || null;
+    
+          const filtered = logs.filter(log =>
+            (!selectedAction || log.action === selectedAction) &&
+            (!selectedRepo || log.repo_id === selectedRepo)
+          );
+    
+          tbody.innerHTML = filtered.map(log => `
+            <tr>
+              <td>${formatPrettyDate(log.timestamp)}</td>
+              <td>${log.action}</td>
+              <td>${getRepoNameById(log.repo_id)}</td>
+              <td>${log.user_id} (${log.username})</td>
+            </tr>
+          `).join("");
+        }
+    
+        actionFilter.addEventListener("change", renderFilteredLogs);
+        repoFilter.addEventListener("change", renderFilteredLogs);
+    
+        renderFilteredLogs(); // initial render
+    
+      } catch (err) {
+        console.error("Error loading logs:", err);
+        contentBox.innerHTML = `<p>Error loading activity logs.</p>`;
+      }
     }
+    
+    
+    
     function openRepoDashboard(repoId) {
       const token = localStorage.getItem("token");
       if (!token) {
@@ -296,7 +468,40 @@ if (!repos.length) {
     }
     window.openRepoDashboard = openRepoDashboard;
 
-    
+    const userSearch = document.getElementById("user-search");
+    const suggestionBox = document.getElementById("user-suggestions");
+
+    userSearch.addEventListener("input", async () => {
+      const query = userSearch.value.trim();
+      if (!query) {
+        suggestionBox.innerHTML = "";
+        return;
+      }
+
+      try {
+        const token = localStorage.getItem("token");
+        const res = await fetch(`/api/superadmin/users?q=${query}`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        const users = await res.json();
+
+        suggestionBox.innerHTML = users.map(user => `
+          <li data-id="${user.id}">${user.id} (${user.username})</li>
+        `).join("");
+
+      } catch (err) {
+        console.error("Failed to fetch users", err);
+      }
+    });
+
+    // When user clicks a suggestion
+    suggestionBox.addEventListener("click", (e) => {
+      const li = e.target.closest("li");
+      if (!li) return;
+      userSearch.value = li.dataset.id;
+      suggestionBox.innerHTML = "";
+    });
+
     
     function openRepository(repoId) {
       const token = localStorage.getItem("token");
@@ -632,26 +837,28 @@ async function snapshotRepo(event, repoId) {
         alert("Failed to update access.");
       }
       console.log("Sending access:", {
-  user_id: Number(formData.get("user_id")),
-  role: formData.get("role")
-  
-});
+        user_id: Number(formData.get("user_id")),
+        role: formData.get("role")
+        
+      });
 
-  }
+    }
 
     const accessRepoPanel = document.getElementById("access-repo-panel");
     const closeAccessBtn = document.getElementById("close-access-panel");
     async function openAccessPanel(repoId) {
         currentRepoId = repoId;
-
-        const repo = dashboardData.repos.find(r => r.id === repoId);
-        if (repo) {
-          const visibilitySelect = document.getElementById("visibility-toggle");
-          visibilitySelect.value = repo.visibility;
-        }
         accessRepoPanel.classList.add("open");
         accessRepoPanel.setAttribute("aria-hidden", "false");
         document.body.classList.add("panel-open");
+        const repo = dashboardData.repos.find(r => r.id === repoId);
+        if (repo) {
+          const visibilitySelect = document.getElementById("visibility-toggle");
+          if (visibilitySelect) {
+            visibilitySelect.value = repo.visibility;
+          }
+        }
+
         }
     
     async function closeAccessPanel() {
@@ -674,6 +881,7 @@ async function snapshotRepo(event, repoId) {
     
     window.deleteRepo = deleteRepo;
     window.snapshotRepo = snapshotRepo;
+    window.toggleVisibility = toggleVisibility;
 
     closeAccessBtn.addEventListener("click", closeAccessPanel);
     window.openAccessPanel = openAccessPanel;
@@ -703,6 +911,43 @@ async function snapshotRepo(event, repoId) {
         tbody.appendChild(row);
       }
     }
+    function toggleVisibility(repoId) {
+      const repo = dashboardData.repos.find(r => r.id === repoId);
+      if (!repo) return alert("Repository not found");
+    
+      const currentVisibility = repo.visibility;
+      const newVisibility = currentVisibility === "public" ? "private" : "public";
+    
+      const confirmChange = confirm(
+        `Change visibility of '${repo.name}' from ${currentVisibility.toUpperCase()} to ${newVisibility.toUpperCase()}?`
+      );
+    
+      if (!confirmChange) return;
+    
+      const token = localStorage.getItem("token");
+      fetch(`/repositories/${repoId}/toggle-visibility`, {
+        method: "PATCH",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ new_visibility: newVisibility })
+      })
+        .then(res => res.json().then(data => ({ ok: res.ok, data })))
+        .then(({ ok, data }) => {
+          if (!ok) throw new Error(data.detail || "Failed to update visibility");
+    
+          alert("✅ Visibility updated!");
+          fetchDashboardData().then(() => renderSection('report'));
+        })
+        .catch(err => {
+          console.error("Visibility update failed:", err);
+          alert("❌ Could not change visibility.");
+        });
+    }
+    
+    
+    
     document.addEventListener('DOMContentLoaded', () => {
       let tooltip = null;
     

@@ -12,6 +12,7 @@
     <div class="nav-item active" data-section="home">Home</div>
     <div class="nav-item" data-section="report">Your Repos</div>
     <div class="nav-item" data-section="activity">Activity/History</div>
+    <div class="nav-item" data-section="public">🌐 Public</div>
   </nav>
 
   <div class="main-content">
@@ -45,7 +46,9 @@
     <button class="close-btn" id="close-access-panel" aria-label="Close Access Panel">&times;</button>
     <h3>Manage Access</h3>
     <form id="access-form">
-      <input name="user_id" placeholder="User ID" required />
+      <label for="user-search">User</label>
+      <input type="text" id="user-search" name="user_id" autocomplete="off" placeholder="Type username or ID" required />
+      <ul id="user-suggestions" class="suggestion-list"></ul>
       <select name="role">
         <option value="viewer">Viewer</option>
         <option value="collaborator">Collaborator</option>

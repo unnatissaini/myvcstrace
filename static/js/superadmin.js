@@ -49,7 +49,7 @@ function init_overview() {
     });
 }
 function init_users() {
-  fetch("/api/superadmin/users")
+  fetch("/api/superadmin/users-reset")
     .then(res => res.json())
     .then(users => {
       const tbody = document.getElementById("user-table-body");
@@ -58,7 +58,9 @@ function init_users() {
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td>${user.id}</td>
-          <td>${user.username}</td>
+          <td>
+          <a href="/api/superadmin/impersonate/${user.id}?redirect_to=impersonated" class="impersonate-link">${user.username}
+          </td>
           <td>
             <button class="action-btn" onclick="deleteUser(${user.id})">Delete</button>
           </td>
@@ -68,6 +70,14 @@ function init_users() {
     })
     .catch(err => console.error("Failed to load users:", err));
 }
+document.addEventListener("click", function (e) {
+  if (e.target.classList.contains("impersonate-link")) {
+    const proceed = confirm("Impersonate this user?");
+    if (!proceed) {
+      e.preventDefault(); // Stop redirect
+    }
+  }
+});
 
 function deleteUser(userId) {
   if (!confirm("Are you sure you want to delete this user?")) return;
@@ -85,8 +95,12 @@ function init_repositories() {
   fetch("/api/superadmin/repositories")
     .then(res => res.json())
     .then(repos => {
+      // 🔤 Sort repositories alphabetically by name (case-insensitive)
+      repos.sort((a, b) => a.name.localeCompare(b.name));
+
       const tbody = document.getElementById("repo-table-body");
       tbody.innerHTML = "";
+
       repos.forEach(repo => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -106,6 +120,7 @@ function init_repositories() {
     })
     .catch(err => console.error("Error loading repos:", err));
 }
+
 function openAsAdmin(repoId) {
   window.location.href = `/superadmin/repo/${repoId}/dashboard`;
 }
@@ -248,6 +263,11 @@ function initRegisterForm() {
       });
 
       const data = await res.json();
+      const usersNavItem = document.querySelector(".nav-item[onclick*='users']");
+      if (usersNavItem) {
+        loadSection(usersNavItem, 'users');
+      }
+
       document.getElementById("register-result").innerText = data.message || "Registered Already!";
     } catch (err) {
       document.getElementById("register-result").innerText = "Error registering user";
@@ -262,7 +282,7 @@ function initResetPasswordPanel() {
   if (!form || !userSelect) return;
 
   // Load users into the select dropdown
-  fetch("/api/superadmin/users")
+  fetch("/api/superadmin/users-reset")
     .then(res => res.json())
     .then(users => {
       userSelect.innerHTML = users
@@ -294,6 +314,20 @@ function initResetPasswordPanel() {
     } catch (err) {
       resetStatus.innerText = "Error resetting password.";
       console.error("Reset password failed:", err);
+    }
+  });
+}
+function filterTable(tbodyId, searchTerm) {
+  const filter = searchTerm.toLowerCase();
+  const tbody = document.getElementById(tbodyId);
+  const rows = tbody.querySelectorAll("tr");
+
+  rows.forEach(row => {
+    const text = row.textContent.toLowerCase();
+    if (text.includes(filter)) {
+      row.style.display = "";
+    } else {
+      row.style.display = "none";
     }
   });
 }

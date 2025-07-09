@@ -268,23 +268,44 @@ function saveFile() {
     const fileInput = document.getElementById("upload-file");
     const file = fileInput.files[0];
     if (!file) return alert("Choose a file to upload.");
-
+  
     const formData = new FormData();
     formData.append("file", file);
     const token = localStorage.getItem("token");
-
+  
     fetch(`/repositories/${currentRepoId}/upload`, {
       method: "POST",
-      headers: { "Authorization": `Bearer ${token}` },
+      headers: {
+        "Authorization": `Bearer ${token}`
+      },
       body: formData,
     })
-      .then(res => res.json())
-      .then(() => {
+      .then(async res => {
+        // Check if server returned a 403 error
+        if (res.status === 403) {
+          const errorData = await res.json();
+          alert(errorData.detail || "Access denied. You do not have permission to upload to this repository.");
+          return;
+        }
+  
+        // Try parsing JSON response
+        const data = await res.json();
+        
+        if (data.success === false) {
+          alert(data.message || "Upload failed due to permission issues.");
+          return;
+        }
+  
         alert("File uploaded successfully!");
         closeActionPanel();
         loadFiles(currentRepoId);
+      })
+      .catch(err => {
+        console.error("Upload error:", err);
+        alert("Something went wrong while uploading the file.");
       });
   }
+  
 
   // ---------------- Commit ----------------
 
@@ -339,7 +360,7 @@ function saveFile() {
   
     panel.classList.add("open");
   
-    // 1️⃣ If no file selected → show trash
+    // 1️⃣ No file selected: Show trash recovery
     if (!filename || filename === "Select a file") {
       fetch(`/repositories/${currentRepoId}/trash_files`, {
         headers: { "Authorization": `Bearer ${token}` }
@@ -368,7 +389,7 @@ function saveFile() {
       return;
     }
   
-    // 2️⃣ File selected → check if it's merged
+    // 2️⃣ File selected → Check merge info
     fetch(`/repositories/${currentRepoId}/file_merge_info?file_name=${encodeURIComponent(filename)}`, {
       headers: { "Authorization": `Bearer ${token}` }
     })
@@ -377,37 +398,62 @@ function saveFile() {
         return res.json();
       })
       .then(info => {
+        const cleanName = filename.replace(/^versions\//, "");
+  
         if (info.is_merged && info.commit_id) {
           if (info.is_merge_input) {
-              alert("This file cannot be reverted. It might have been used in another merge.");
-              return;
+            alert("This file cannot be reverted. It might have been used in another merge.");
+            return;
           }
-
+  
           const confirmMsg = `This file was created by merging.\nDo you want to revert the merged version?`;
           if (!confirm(confirmMsg)) return;
-
-          const isVersionFile = filename.includes("_v");
-
-          if (isVersionFile) {
-              return fetch(`/repositories/${currentRepoId}/revert_version/${filename}`, {
-                  method: "POST",
-                  headers: { "Authorization": `Bearer ${token}` }
-              });
-          } else {
-              return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
-                  method: "POST",
-                  headers: { "Authorization": `Bearer ${token}` }
-              });
-          }
+  
+          fetch(`/repositories/${currentRepoId}/revert_version/${cleanName}`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` }
+          })
+            .then(res => {
+              if (!res.ok) throw new Error("Failed to revert merged version.");
+              alert("Reverted merged version file successfully.");
+              location.reload();
+            })
+            .catch(err => {
+              alert("Error: " + err.message);
+            });
+  
+          return;
         }
-
-        // 3️⃣ Only reached if NOT a merged file
-      content.innerHTML = `
-          <h3>Revert File: ${filename}</h3>
-          <p>This file is not a merged file. You can manually revert to a previous commit by providing its ID.</p>
-          <input type="number" id="revert-commit-id" placeholder="Enter commit ID" style="width:100%; padding: 6px;" />
-          <br><br>
-          <button onclick="submitRevert()">Revert to Commit</button>
+  
+        if (!info.is_merged && !info.is_merge_input && info.commit_id) {
+          const confirmMsg = `This version file was created by a commit.\nDo you want to revert it?`;
+          if (!confirm(confirmMsg)) return;
+  
+          fetch(`/repositories/${currentRepoId}/revert_version_commit/${cleanName}`, {
+            method: "POST",
+            headers: { "Authorization": `Bearer ${token}` }
+          })
+            .then(res => {
+              if (!res.ok) throw new Error("Failed to revert commit version.");
+              alert("Reverted version file created by commit.");
+              location.reload();
+            })
+            .catch(err => {
+              alert("Error: " + err.message);
+            });
+  
+          return;
+        }
+  
+        // 3️⃣ Default: Show manual revert panel
+        content.innerHTML = `
+        <h3>Revert File: ${filename}</h3>
+        <p>This file is not a merged file. You can manually revert to a previous commit by providing its ID.</p>
+        <label>Suggested Commit ID: ${info.commit_id ? info.commit_id : "Not available"}</label>
+        <input type="number" id="revert-commit-id" placeholder="Enter commit ID" style="width:100%; padding: 6px;" 
+          value="${info.commit_id ? info.commit_id : ""}" />
+        <br><br>
+        <button onclick="submitRevert()">Revert to Commit</button>
         `;
       })
       .catch(err => {
@@ -415,7 +461,7 @@ function saveFile() {
         alert("Could not determine merge info.");
       });
   }
-  
+   
   function submitRestore() {
     const selectedFile = document.getElementById("restore-file-select").value;
     const token = localStorage.getItem("token");
@@ -698,9 +744,13 @@ function mergeCommitWithOriginal(commitId, filePath) {
   
         const viewer = document.getElementById("file-content");
         viewer.innerHTML = `
-          <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
+          <textarea id="editor" style="width:100%; height:80%;">${data.content}</textarea>
           <br>
+          <!-- Add this where the file content or edit area is rendered -->
+          <button id="save-file-btn" style="display: none; margin-top: 8px;" onclick="saveFile()">💾 Save Changes</button>
+
         `;
+        document.getElementById("save-file-btn").style.display = "inline-block";
       })
       .catch(err => {
         alert("Error preparing file for editing: " + err.message);
@@ -755,5 +805,7 @@ function mergeCommitWithOriginal(commitId, filePath) {
   window.convertFile = convertFile;
   window.submitRestore = submitRestore;
   window.submitGenericMerge = submitGenericMerge;
+  window.saveFile = saveFile;
+
 
 });

@@ -3,11 +3,15 @@ from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 from starlette.status import HTTP_303_SEE_OTHER
-
 from server.db import get_db
 from server.models import User, Repository, Log
 from server.utils.token import create_access_token
 from passlib.hash import bcrypt
+from typing import List
+from sqlalchemy.orm import Session
+from server.schemas import LogOut
+from sqlalchemy import or_, cast
+from sqlalchemy.types import String
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -18,33 +22,48 @@ SUPERADMIN_SECRET = "123"
 # ----------------------------
 # 🔐 SUPERADMIN LOGIN (password only)
 # ----------------------------
-
 @router.get("/superadmin-login", response_class=HTMLResponse)
 async def superadmin_login_form(request: Request):
     return templates.TemplateResponse("superadmin_login.html", {"request": request})
 
-
 @router.post("/superadmin-login", response_class=HTMLResponse)
 async def superadmin_login(request: Request, password: str = Form(...)):
     if password == SUPERADMIN_SECRET:
-        response = RedirectResponse(url="/superadmin", status_code=HTTP_303_SEE_OTHER)
-        response.set_cookie("superadmin_logged_in", "true", httponly=True)
-        return response
+        request.session["superadmin_authenticated"] = True
+        return RedirectResponse(url="/superadmin", status_code=HTTP_303_SEE_OTHER)
+    
     return templates.TemplateResponse("superadmin_login.html", {
         "request": request,
         "error": "Incorrect password"
     })
+
+from fastapi import Query
+
+@router.get("/api/superadmin/users")
+def search_users(q: str = Query(..., min_length=1), db: Session = Depends(get_db)):
+    query = db.query(User).filter(
+        or_(
+            User.username.ilike(f"%{q}%"),
+            cast(User.id, String).ilike(f"%{q}%")
+        )
+    ).limit(10)
+    return [{"id": user.id, "username": user.username} for user in query]
 
 
 # ----------------------------
 # ✅ SUPERADMIN AUTH DEPENDENCY
 # ----------------------------
 
-from fastapi.responses import RedirectResponse
 
-async def require_superadmin(request: Request):
+def require_superadmin(request: Request):
+    if not request.session.get("superadmin_authenticated"):
+        raise HTTPException(status_code=303, detail="Redirecting to /superadmin-login")
+    return True
+
+
+'''async def require_superadmin(request: Request):
     if request.cookies.get("superadmin_logged_in") != "true":
-        return RedirectResponse(url="/superadmin-login", status_code=303)
+        return RedirectResponse(url="/superadmin-login", status_code=303)'''
 
 
 
@@ -53,10 +72,8 @@ async def require_superadmin(request: Request):
 # ----------------------------
 
 @router.get("/superadmin", response_class=HTMLResponse)
-async def superadmin_dashboard(request: Request, user=Depends(require_superadmin)):
-    response = templates.TemplateResponse("superadmin_dashboard.html", {"request": request})
-    response.headers["Cache-Control"] = "no-store"
-    return response
+async def superadmin_dashboard(request: Request, _=Depends(require_superadmin)):
+    return templates.TemplateResponse("superadmin_dashboard.html", {"request": request})
 
 
 
@@ -69,9 +86,9 @@ async def load_section(section: str, request: Request, _: None = Depends(require
 # 📦 API: USERS
 # ----------------------------
 
-@router.get("/api/superadmin/users")
+@router.get("/api/superadmin/users-reset")
 def get_all_users(db: Session = Depends(get_db), _: None = Depends(require_superadmin)):
-    return db.query(User).all()
+    return db.query(User).order_by(User.id).all()
 
 
 @router.delete("/api/superadmin/users/{user_id}")
@@ -88,7 +105,7 @@ def delete_user(user_id: int, db: Session = Depends(get_db), _: None = Depends(r
 # 📦 API: REPOSITORIES
 # ----------------------------
 @router.get("/api/superadmin/repositories")
-def get_all_repositories(db: Session = Depends(get_db)):
+def get_all_repositories(db: Session = Depends(get_db), _: None = Depends(require_superadmin)):
     repos = db.query(Repository).all()
     return [{
         "id": r.id,
@@ -97,8 +114,6 @@ def get_all_repositories(db: Session = Depends(get_db)):
         "visibility": r.visibility
     } for r in repos]
 
-from fastapi.responses import RedirectResponse
-from starlette.status import HTTP_303_SEE_OTHER
 
 
 @router.get("/superadmin/repo/{repo_id}/dashboard")
@@ -140,13 +155,6 @@ def get_stats(db: Session = Depends(get_db), _: None = Depends(require_superadmi
         "public_repos": db.query(Repository).filter_by(visibility="public").count(),
         "private_repos": db.query(Repository).filter_by(visibility="private").count()
     }
-
-from typing import List
-from fastapi import Depends
-from sqlalchemy.orm import Session
-from server.db import get_db
-from server.models import Log, User, Repository
-from server.schemas import LogOut
 
 @router.get("/api/superadmin/logs", response_model=List[LogOut])
 def get_logs(db: Session = Depends(get_db)):
@@ -210,9 +218,44 @@ def reset_password(user_id: int, new_password: str = Form(...), db: Session = De
     db.commit()
     return {"message": f"Password for '{db_user.username}' reset successfully"}
 
-
 @router.get("/superadmin-logout")
-def superadmin_logout():
+def superadmin_logout(request: Request):
     response = RedirectResponse(url="/superadmin-login", status_code=303)
     response.delete_cookie("superadmin_logged_in")
+    request.session.clear()
+    return RedirectResponse(url="/superadmin-login", status_code=303)
+
+
+
+@router.get("/api/superadmin/impersonate/{user_id}")
+def impersonate_user(user_id: int, redirect_to: str = "dashboard", db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    token = create_access_token(data={"sub": user.username})
+
+    if redirect_to == "impersonated":
+        response = RedirectResponse(url=f"/impersonated?token={token}", status_code=303)
+    else:
+        response = RedirectResponse(url="/dashboard", status_code=303)
+
+    response.set_cookie(key="access_token", value=f"Bearer {token}", httponly=True)
+    return response
+
+'''@router.get("/impersonated", response_class=HTMLResponse)
+def impersonated_entry(request: Request, token: str):
+    response = RedirectResponse(url="/dashboard")
+    response.set_cookie("access_token", token, httponly=True)
+    return response'''
+@router.get("/impersonated", response_class=HTMLResponse)
+def impersonated_entry(token: str):
+    html = f"""
+    <script>
+      localStorage.setItem("token", "Bearer {token}");
+      window.location.href = "/dashboard";
+    </script>
+    """
+    response = HTMLResponse(content=html)
+    response.set_cookie("access_token", f"Bearer {token}", httponly=True)
     return response
