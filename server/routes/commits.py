@@ -12,6 +12,7 @@ from server.routes.repositories import compute_file_hash
 from fpdf import FPDF
 from server.utils.diff_utils import generate_diff
 from docx import Document
+from sqlalchemy import or_
 
 router = APIRouter(prefix="/repositories", tags=["Commits"])
 import re
@@ -186,7 +187,7 @@ def revert_commit(
         return {"message": f"Proposed commit #{commit.id} reverted. File restored."}
 
     raise HTTPException(status_code=400, detail="Unsupported commit status for revert")
-@router.post("/{repo_id}/revert_version/{version_filename}")
+@router.post("/{repo_id}/revert_version/{version_filename:path}")
 def revert_merged_version_file(
     repo_id: int,
     version_filename: str,
@@ -221,7 +222,8 @@ def revert_merged_version_file(
     # Delete the version file
     if os.path.exists(version_path):
         os.remove(version_path)
-
+    else:
+        print(f"⚠ File {version_path} does not exist.")
     # Reset status if needed
     commit.status = "proposed"
     commit.versioned_filename = None
@@ -595,7 +597,7 @@ def preview_commit(
         raise HTTPException(status_code=404, detail="Nothing to preview")
 
     return {"content": content, "filename": commit.original_filename}
-@router.get("/{repo_id}/file_merge_info")
+'''@router.get("/{repo_id}/file_merge_info")
 def file_merge_info(
     repo_id: int,
     file_name: str,
@@ -621,7 +623,57 @@ def file_merge_info(
             "commit_id": fvh.commit_id
         }
 
-    return {"is_merged": False}
+    return {"is_merged": False}'''
+
+from pydantic import BaseModel
+from typing import Optional
+
+class FileMergeInfo(BaseModel):
+    is_merged: bool
+    is_merge_input: bool
+    commit_id: Optional[int]
+
+@router.get("/{repo_id}/file_merge_info")
+def get_file_merge_info(repo_id: int, file_name: str, db: Session = Depends(get_db), current_user: UserOut = Depends(get_current_user)):
+    print(f"🔍 Checking file merge info for file_name={file_name}, repo_id={repo_id}")
+    
+    # Strip versions/ if path is included
+    if file_name.startswith("versions/"):
+        file_name = file_name.replace("versions/", "", 1)
+
+    # Step 1: Get the commit for the given versioned file
+    commit = db.query(Commit).filter_by(
+        repo_id=repo_id,
+        versioned_filename=file_name,
+        status="merged"
+    ).first()
+
+    if not commit:
+        print("❌ No merge result found.")
+        return {
+            "is_merged": False,
+            "is_merge_input": False,
+            "commit_id": None
+        }
+
+    commit_id = commit.id
+
+    # Step 2: Check if this file was created as result of a merge
+    is_merged = db.query(MergeHistory).filter_by(result_commit_id=commit_id).first() is not None
+
+    # Step 3: Check if this commit is used in another merge as input
+    is_merge_input = db.query(MergeHistory).filter(
+        (MergeHistory.base_commit_id == commit_id) |
+        (MergeHistory.merged_commit_id == commit_id)
+    ).first() is not None
+
+    print(f"✅ Merge Info: is_merged={is_merged}, is_merge_input={is_merge_input}, commit_id={commit_id}")
+
+    return {
+        "is_merged": is_merged,
+        "is_merge_input": is_merge_input,
+        "commit_id": commit_id
+    }
 
 
 @router.get("/{repo_id}/download_version")

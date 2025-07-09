@@ -21,7 +21,6 @@ async function loadSection(clickedItem, sectionName) {
     else if (sectionName === "register") initRegisterForm();
     else if (sectionName === 'reset_password') initResetPasswordPanel();
 
-    // Add others later...
   } catch (err) {
     document.getElementById("main-display").innerHTML = `<p>Error loading section: ${err.message}</p>`;
   }

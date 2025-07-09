@@ -59,7 +59,7 @@
     document.addEventListener('DOMContentLoaded', () => {
       const repoId = document.body.getAttribute("data-repo-id");
       if (window.loadFiles && repoId) {
-        loadFiles(repoId); // ✅ Now safe to call after `rd.js` loads
+        loadFiles(repoId); 
       } else {
         console.error("loadFiles is not defined or repoId missing");
       }

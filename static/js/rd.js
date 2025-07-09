@@ -13,34 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ---------------- File Operations ----------------
-  /*function viewFile(repoId, filePath) {
-    const ext = filePath.split(".").pop().toLowerCase();
-    const viewer = document.getElementById("file-content");
-    CURRENT_FILE_NAME = filePath; 
-    fileNameElement.textContent = filePath;
-
-    fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`)
-      .then(res => res.json())
-      .then(data => {
-        // For doc, docx, pdf → show editable textarea with commit button
-        if (["doc", "docx", "pdf"].includes(ext)) {
-          viewer.innerHTML = `
-          <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
-          <br />
-          <button onclick="commitEditedText('${filePath}')">Commit Edited Text</button>
-        `;        
-        } else {
-          // For regular text files
-          viewer.innerHTML = `
-            <pre style="white-space: pre-wrap; padding: 10px;">${data.content || "(empty)"}</pre>
-          `;
-        }
-      })
-      .catch(err => {
-        viewer.textContent = "Error loading file.";
-        console.error(err);
-      });
-  }*/
   function viewFile(repoId, filePath) {
     const ext = filePath.split(".").pop().toLowerCase();
     CURRENT_FILE_NAME = filePath;
@@ -116,9 +88,6 @@ function saveFile() {
       alert("Save failed: " + err.message);
     });
 }
-
-
-
 
   // ---------------- File Tree ----------------
   
@@ -409,39 +378,31 @@ function saveFile() {
       })
       .then(info => {
         if (info.is_merged && info.commit_id) {
-          const confirmMsg = `This file was created by merging.\nDo you want to revert it?`;
+          if (info.is_merge_input) {
+              alert("This file cannot be reverted. It might have been used in another merge.");
+              return;
+          }
+
+          const confirmMsg = `This file was created by merging.\nDo you want to revert the merged version?`;
           if (!confirm(confirmMsg)) return;
-  
+
           const isVersionFile = filename.includes("_v");
-  
-          const revertUrl = isVersionFile
-            ? `/repositories/${currentRepoId}/revert_version/${filename}`
-            : `/repositories/${currentRepoId}/revert/${info.commit_id}`;
-  
-          // ✅ Trigger appropriate revert and exit
-          fetch(revertUrl, {
-            method: "POST",
-            headers: { "Authorization": `Bearer ${token}` }
-          })
-            .then(res => {
-              if (!res.ok) throw new Error("Revert failed");
-              return res.json();
-            })
-            .then(data => {
-              alert(data.message || "Revert successful");
-              closeActionPanel();
-              viewFile(currentRepoId, filename);
-            })
-            .catch(err => {
-              console.error("Revert failed:", err);
-              alert("Error: " + err.message);
-            });
-  
-          return; // ✅ Prevent further execution
+
+          if (isVersionFile) {
+              return fetch(`/repositories/${currentRepoId}/revert_version/${filename}`, {
+                  method: "POST",
+                  headers: { "Authorization": `Bearer ${token}` }
+              });
+          } else {
+              return fetch(`/repositories/${currentRepoId}/revert/${info.commit_id}`, {
+                  method: "POST",
+                  headers: { "Authorization": `Bearer ${token}` }
+              });
+          }
         }
-  
+
         // 3️⃣ Only reached if NOT a merged file
-        content.innerHTML = `
+      content.innerHTML = `
           <h3>Revert File: ${filename}</h3>
           <p>This file is not a merged file. You can manually revert to a previous commit by providing its ID.</p>
           <input type="number" id="revert-commit-id" placeholder="Enter commit ID" style="width:100%; padding: 6px;" />
@@ -739,7 +700,6 @@ function mergeCommitWithOriginal(commitId, filePath) {
         viewer.innerHTML = `
           <textarea id="editor" style="width:100%; height:400px;">${data.content}</textarea>
           <br>
-          <button onclick="commitEditedText('${data.editable_path}')">Commit Edited Text</button>
         `;
       })
       .catch(err => {
