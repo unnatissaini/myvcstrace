@@ -53,3 +53,7 @@ class Role(str, Enum):
 class SetAccessLevelInput(BaseModel):
     user_id: int
     role: Role
+
+class RestoreSnapshotInput(BaseModel):
+    snapshot_id: int
+    new_repo_name: str

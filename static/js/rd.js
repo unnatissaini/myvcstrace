@@ -1,8 +1,7 @@
+let currentRepoId = null;
+let currentRole = null;
+let CURRENT_FILE_NAME = null;
 document.addEventListener('DOMContentLoaded', () => {
-  let currentRepoId = null;
-  let currentRole = null;
-  let CURRENT_FILE_NAME = null;
-
   const actionPanel = document.getElementById("action-panel");
   const fileNameElement = document.getElementById("file-name");
   const fileContentElement = document.getElementById("file-content");
@@ -23,71 +22,71 @@ document.addEventListener('DOMContentLoaded', () => {
     fetch(`/repositories/${repoId}/file?name=${encodeURIComponent(filePath)}`)
       .then(res => res.json())
       .then(data => {
-        // Display content
         viewer.textContent = data.content || "(empty)";
   
-        // Enable buttons
-        document.getElementById("edit-btn").style.display =
-          ["admin", "editor", "collaborator"].includes(currentRole) ? "inline-block" : "none";
+        const editBtn = document.getElementById("edit-btn");
+        if (editBtn) {
+          editBtn.style.display = ["admin", "editor", "collaborator"].includes(currentRole)
+            ? "inline-block"
+            : "none";
+        }
   
-        // If versioned file and ends with .txt → allow conversion
-        if (filePath.includes("versions/") && filePath.endsWith(".txt")) {
-          document.getElementById("convert-btn").style.display = "inline-block";
-        } else {
-          document.getElementById("convert-btn").style.display = "none";
+        const convertBtn = document.getElementById("convert-btn");
+        if (convertBtn) {
+          convertBtn.style.display = filePath.includes("versions/") && filePath.endsWith(".txt")
+            ? "inline-block"
+            : "none";
         }
       })
       .catch(err => {
         viewer.textContent = "Error loading file.";
         console.error(err);
       });
+  }  
+
+  function saveFile() {
+    const ext = CURRENT_FILE_NAME.split(".").pop().toLowerCase();
+    const token = localStorage.getItem("token");
+
+    let contentElement = document.getElementById("editor") || document.getElementById("file-content");
+
+    if (!contentElement) {
+      alert("No content to save.");
+      return;
+    }
+
+    // Get content based on element type
+    const content = contentElement.tagName === "TEXTAREA"
+      ? contentElement.value
+      : contentElement.textContent;
+
+    const confirmMsg = confirm("Are you sure you want to save the current changes?");
+    if (!confirmMsg) return;
+
+    fetch(`/repositories/${currentRepoId}/edit_file`, {
+      method: "PUT",
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        filename: CURRENT_FILE_NAME,
+        content: content,
+        is_binary: false  // always false since we're editing text
+      })
+    })
+      .then(res => {
+        if (!res.ok) throw new Error("Failed to save");
+        return res.json();
+      })
+      .then(data => {
+        alert(data.message || "File saved successfully.");
+      })
+      .catch(err => {
+        console.error(err);
+        alert("Save failed: " + err.message);
+      });
   }
-  
-
-
-function saveFile() {
-  const ext = CURRENT_FILE_NAME.split(".").pop().toLowerCase();
-  const token = localStorage.getItem("token");
-
-  let contentElement = document.getElementById("editor") || document.getElementById("file-content");
-
-  if (!contentElement) {
-    alert("No content to save.");
-    return;
-  }
-
-  // Get content based on element type
-  const content = contentElement.tagName === "TEXTAREA"
-    ? contentElement.value
-    : contentElement.textContent;
-
-  const confirmMsg = confirm("Are you sure you want to save the current changes?");
-  if (!confirmMsg) return;
-
-  fetch(`/repositories/${currentRepoId}/edit_file`, {
-    method: "PUT",
-    headers: {
-      "Authorization": `Bearer ${token}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      filename: CURRENT_FILE_NAME,
-      content: content,
-      is_binary: false  // always false since we're editing text
-    })
-  })
-    .then(res => {
-      if (!res.ok) throw new Error("Failed to save");
-      return res.json();
-    })
-    .then(data => {
-      alert(data.message || "File saved successfully.");
-    })
-    .catch(err => {
-      console.error(err);
-      alert("Save failed: " + err.message);
-    });
-}
 
   // ---------------- File Tree ----------------
   
@@ -201,16 +200,21 @@ function saveFile() {
         fileContentElement.textContent = data.content;
   
         // Disable editing controls
-        document.getElementById("edit-btn").style.display = "none";
-        document.getElementById("convert-btn").style.display = "none";
-        document.getElementById("save-file-btn").style.display = "none";
+        const editBtn = document.getElementById("edit-btn");
+        const convertBtn = document.getElementById("convert-btn");
+        const saveBtn = document.getElementById("save-file-btn");
+
+        if (editBtn) editBtn.style.display = "none";
+        if (convertBtn) convertBtn.style.display = "none";
+        if (saveBtn) saveBtn.style.display = "none";
+
       })
       .catch(err => {
         alert("Error loading commit: " + err.message);
       });
   }
     
-    function deleteFile() {
+  function deleteFile() {
     const fileName = document.getElementById("file-name").textContent;
     if (fileName === "Select a file") {
         alert("Please select a file to delete.");
@@ -507,22 +511,22 @@ function saveFile() {
 
   // ---------------- Helpers ----------------
 
-function mergeCommitWithOriginal(commitId, filePath) {
-  if (!commitId || commitId === "undefined" || isNaN(commitId)) {
-    alert("Invalid commit ID — merge aborted.");
-    return;
+  function mergeCommitWithOriginal(commitId, filePath) {
+    if (!commitId || commitId === "undefined" || isNaN(commitId)) {
+      alert("Invalid commit ID — merge aborted.");
+      return;
+    }
+
+    const token = localStorage.getItem("token");
+
+    fetch(`/repositories/${currentRepoId}/merge/${commitId}`, {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${token}` }
+    })
+      .then(res => res.json())
+      .then(data => alert(data.message || "Merged successfully."))
+      .catch(err => alert("Merge failed: " + err.message));
   }
-
-  const token = localStorage.getItem("token");
-
-  fetch(`/repositories/${currentRepoId}/merge/${commitId}`, {
-    method: "POST",
-    headers: { "Authorization": `Bearer ${token}` }
-  })
-    .then(res => res.json())
-    .then(data => alert(data.message || "Merged successfully."))
-    .catch(err => alert("Merge failed: " + err.message));
-}
 
 
   function closeActionPanel() {

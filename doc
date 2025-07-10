@@ -1,0 +1,61 @@
+user case features--::--
+
+admin:
+------------------superadmin dashboard-------------
+dashboard overveiw section-
+can seeTotal Users, Total Repositories, Public Repositories, Private Repositories: 9
+
+users section-
+view list of users with id
+can delete a user permanently
+can impersonate as the user to its dashboard without password by clicking on the name of user
+
+repositories section-
+can see list of all repos with ID, Name, Owner, Visibility and change visibility of repo and can also delete it
+
+activity log-
+can see log of user or repo by choosing the name
+
+resetpassword section-
+can reset the password of a user
+
+register user section-
+can register a user by providing username and password
+
+logout-
+log out from the dashboard
+
+user:
+-----------dashboard-------------------
+home section -
+make repo with optional upload file
+
+you repo section-
+display all repo whose access r given(description, owner, visibility and role) and is owner(description, visibility and created on)
+give access to the owned rwepos
+delete the reposchange the visibility of own repos
+can snapshot the whole repo
+can view repo in the repodashboard by clicking on the name of repo
+
+public section-
+can see all the public repos and open it to view its content i repo dashboard
+
+activity/ history section -
+can see the logs of all existing repos owned.
+can use filter by action and repo name
+
+snapshot section-
+can view all the repo snapshot created
+restore the repo snaphot as a repo.
+ 
+ logout section-
+ logout 
+
+ -------------repo dashboard-------------------
+ can view all files in the repo and its content.
+ with access to write can view all commits, edit file and commit it
+ admin access can merge the commit and created new version
+ admin can merge two version file to create new version
+ admin can delete a file by selecting it and also revert it
+ admin can upload a file
+admin can make a new file or folder

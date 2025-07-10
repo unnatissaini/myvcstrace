@@ -221,9 +221,18 @@ def reset_password(user_id: int, new_password: str = Form(...), db: Session = De
 @router.get("/superadmin-logout")
 def superadmin_logout(request: Request):
     response = RedirectResponse(url="/superadmin-login", status_code=303)
+
+    # Delete all relevant cookies
     response.delete_cookie("superadmin_logged_in")
+    response.delete_cookie("Authorization")
+    response.delete_cookie("access_token")
+    response.delete_cookie("superadmin_force")
+    response.delete_cookie("session")  # If session ID stored in cookie
+
+    # Clear session if using SessionMiddleware
     request.session.clear()
-    return RedirectResponse(url="/superadmin-login", status_code=303)
+
+    return response
 
 
 

@@ -70,6 +70,8 @@ function closeCreateRepoPanel() {
           case 'public':
           renderPublicRepos(); 
           break;
+        case 'snapshots':
+          renderSnapshots();
         default:
           contentBox.innerHTML = "<p>Section not found.</p>";
       }
@@ -271,14 +273,14 @@ if (!repos.length) {
         </div>
 
         <div id="access-section" style="display:none; margin-top: 2rem;">
-          <h4>Add Collaborator</h4>
+          <h4>Add Access</h4>
           <form id="access-form">
           <label for="user-search">User</label>
           <input type="text" id="user-search" name="user_id" autocomplete="off" placeholder="Type username or ID" required />
           <ul id="user-suggestions" class="suggestion-list"></ul>          
             <select name="role">
               <option value="viewer">Viewer</option>
-              <option value="collaborator">Collaborator</option>
+              <option value="editor">Collaborator</option>
               <option value="admin">Admin</option>
             </select>
             <button type="submit">Update</button>
@@ -292,6 +294,7 @@ if (!repos.length) {
           </div>
 
         </div>
+        
       `;
       loadAccessibleRepos();
       // Add event listeners to forms after rendering
@@ -985,39 +988,111 @@ async function snapshotRepo(event, repoId) {
     
         target.addEventListener('mouseleave', removeTooltip, { once: true });
       });
-      document.getElementById("visibility-toggle").addEventListener("change", async (e) => {
-        const newVisibility = e.target.value;
-        const token = localStorage.getItem("token");
       
-        if (!currentRepoId) return alert("No repository selected");
-      
-        const confirmChange = confirm(`Change visibility to "${newVisibility.toUpperCase()}"?`);
-        if (!confirmChange) {
-          // Reset dropdown to current value from data
-          const repo = dashboardData.repos.find(r => r.id === currentRepoId);
-          e.target.value = repo.visibility;
-          return;
-        }
-      
-        try {
-          const res = await fetch(`/repositories/${currentRepoId}/toggle-visibility`, {
-            method: "PATCH",
-            headers: { "Authorization": `Bearer ${token}` },
-            body: JSON.stringify({ new_visibility: newVisibility })
-          });
-      
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.detail || "Failed to update");
-      
-          alert("✅ Visibility updated!");
-          await fetchDashboardData();
-          renderSection('report');
-          closeAccessPanel();
-        } catch (err) {
-          console.error("Visibility update failed:", err);
-          alert("❌ Could not change visibility.");
-        }
-      });
     });
 
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      localStorage.removeItem("token"); // or sessionStorage
+      window.location.href = "/"; // Redirect to login page
+    });
+
+    async function renderSnapshots() {
+      const token = localStorage.getItem("token");
+      const contentBox = document.getElementById("content-box");
     
+      contentBox.innerHTML = `<h2>🗂️ My Snapshots</h2>
+      <input type="text" placeholder="Search Public Repositories..." oninput="filterTable('public-repo-table', this.value)">
+      <p>Loading...</p>
+      `;
+    
+      try {
+        const res = await fetch("/my_snapshots", {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+    
+        const snapshots = await res.json();
+    
+        if (!snapshots.length) {
+          contentBox.innerHTML = `<p>No snapshots found.</p>`;
+          return;
+        }
+    
+        contentBox.innerHTML = `<h2>🗂️ My Snapshots</h2>`;
+    
+        snapshots.forEach(snap => {
+          const timeStr = new Date(snap.created_at * 1000).toLocaleString();
+    
+          contentBox.innerHTML += `
+          <br><br><div class="snapshot-entry glassy-box">
+            <p><strong>File:</strong> ${snap.filename}</p>
+            <p><strong>Size:</strong> ${snap.size_mb} MB</p>
+            <p><strong>Created:</strong> ${timeStr}</p>
+            <input type="text" placeholder="New Repository Name" class="snapshot-restore-name" />
+            <button onclick="restoreFromZip(this)" data-snapshot-name="${snap.filename}">Restore as New Repo</button>
+            <button onclick="deleteSnapshot('${snap.filename}')">🗑 Delete</button>
+          </div>
+        `;
+
+        });
+    
+      } catch (err) {
+        contentBox.innerHTML = `<p>Error: ${err.message}</p>`;
+      }
+    }
+    async function restoreFromZip(buttonEl) {
+      const snapshotName = buttonEl.getAttribute("data-snapshot-name");
+      const newRepoName = buttonEl.previousElementSibling.value.trim();
+    
+      if (!newRepoName) {
+        alert("Please enter a repository name.");
+        return;
+      }
+    
+      const token = localStorage.getItem("token");
+    
+      const res = await fetch("/my_snapshots/restore", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${token}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          snapshot_name: snapshotName,
+          new_repo_name: newRepoName
+        })
+      });
+    
+      const result = await res.json();
+      if (res.ok) {
+        alert("✅ Snapshot restored!");
+        if (typeof renderRepositories === "function") {
+          renderRepositories();  // assumes this is your existing method to render the repo list
+        } else {
+          location.reload(); // fallback: reload page
+        }
+      } else {
+        alert("❌ Restore failed: " + (result.detail || JSON.stringify(result)));
+      }
+    }
+    async function deleteSnapshot(snapshotName) {
+      if (!confirm(`Are you sure you want to delete "${snapshotName}"?`)) return;
+    
+      const token = localStorage.getItem("token");
+    
+      const res = await fetch(`/my_snapshots/${snapshotName}`, {
+        method: "DELETE",
+        headers: {
+          "Authorization": `Bearer ${token}`
+        }
+      });
+    
+      const result = await res.json();
+      if (res.ok) {
+        alert("🗑 Snapshot deleted.");
+        renderSnapshots();  // Refresh the snapshot list
+      } else {
+        alert("❌ Deletion failed: " + (result.detail || JSON.stringify(result)));
+      }
+    }
+     
+        

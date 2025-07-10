@@ -2,7 +2,7 @@ from fastapi import APIRouter, Form, Depends, HTTPException , Body
 from sqlalchemy.orm import Session
 from datetime import datetime
 import os , re , uuid , pathlib ,traceback
-from server.models import Log, FileVersion, MergeHistory, User ,Commit, Snapshot, AccessControl , FileVersionHistory
+from server.models import Log, FileVersion, MergeHistory, User ,Commit, Snapshot, AccessControl , FileVersionHistory , Repository
 from server.db import get_db
 from server.dependencies import get_current_user
 from server.schemas import UserOut
@@ -701,6 +701,50 @@ def convert_to_editable_text(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    # 1️⃣ Check access permissions
+    access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
+    if not access or access.role.lower() not in ("admin", "editor", "collaborator"):
+        raise HTTPException(status_code=403, detail="Permission denied")
+
+    # 2️⃣ Get actual repo owner to fetch correct file path
+    repo = db.query(Repository).filter_by(id=repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    owner_user_id = repo.owner_id
+
+    # 3️⃣ Use the owner's folder for accessing the file
+    file_path = os.path.join(f"D:/VCS_Storage/user_{owner_user_id}/repo_{repo_id}", name)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="Original file not found")
+
+    # 4️⃣ Convert to editable text (.txt)
+    text_version_path = os.path.splitext(file_path)[0] + ".txt"
+    try:
+        content = extract_text_from_file(file_path)
+
+        # Save the extracted text
+        with open(text_version_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+        rel_txt_path = os.path.relpath(text_version_path, f"D:/VCS_Storage/user_{owner_user_id}/repo_{repo_id}")
+        return {
+            "message": "Editable text file created",
+            "editable_path": rel_txt_path,
+            "content": content
+        }
+
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Failed to extract and save text: {str(e)}")
+
+'''@router.get("/{repo_id}/edit_file_text")
+def convert_to_editable_text(
+    repo_id: int,
+    name: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role not in ("admin", "editor", "collaborator"):
         raise HTTPException(status_code=403, detail="Permission denied")
@@ -728,7 +772,7 @@ def convert_to_editable_text(
     except Exception as e:
         
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Failed to extract and save text: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to extract and save text: {str(e)}")'''
 
 @router.get("/{repo_id}/convert_version")
 def convert_versioned_file(

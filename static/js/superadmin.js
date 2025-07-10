@@ -28,10 +28,20 @@ async function loadSection(clickedItem, sectionName) {
 
 
 // Handle logout
-function logout() {
-  document.cookie = "superadmin_logged_in=; Max-Age=0";
+async function logout() {
+  try {
+    await fetch("/superadmin-logout", { method: "GET", credentials: "include" });
+  } catch (err) {
+    console.error("Logout failed", err);
+  }
+  // Clear frontend storage
+  localStorage.clear();
+  sessionStorage.clear();
+
+  // Redirect
   window.location.href = "/superadmin-login";
 }
+
 function init_overview() {
   fetch("/api/superadmin/stats")
     .then(res => {

@@ -3,7 +3,7 @@ from fastapi.templating import Jinja2Templates
 from server.db import get_db
 from server.models import Commit, User, Repository , Snapshot, AccessControl, Log
 from passlib.context import CryptContext
-from server.schemas import RepositoryCreate, UserOut
+from server.schemas import RepositoryCreate, UserOut , RestoreSnapshotInput
 from server.utils.token import create_access_token  # function to generate JWT
 from fastapi.responses import JSONResponse , RedirectResponse , FileResponse
 from passlib.hash import bcrypt
@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from server.dependencies import get_current_user , RepositoryAccessOut, get_current_user_optional
 from sqlalchemy.orm import Session
-import os, mimetypes
+import os, mimetypes , shutil , time , uuid
 from typing import List, Optional
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 from pydantic import BaseModel
@@ -20,13 +20,12 @@ from server.services.access_control import get_user_access_level
 from datetime import datetime
 from server.utils.diff_utils import apply_diff
 from starlette.status import HTTP_303_SEE_OTHER
-from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime
 from server.utils.file_parser import extract_text_from_file  # <- add this
 from server.utils.file_parser import extract_text_from_file  # <- add this
 from sqlalchemy import or_
-
-
+from pathlib import Path
+import zipfile
 class NewFile(BaseModel):
     name: str
     content: str = ""
@@ -256,11 +255,11 @@ def repo_dashboard(repo_id: int, request: Request, db: Session = Depends(get_db)
                 raise HTTPException(status_code=403, detail="Access denied to private repository")
             role = access.role
         else:
-            role = "owner"
+            role = "admin"
     else:
         # Public repository: anyone can view
         if repo.owner_id == current_user.id:
-            role = "owner"
+            role = "admin"
         else:
             access = db.query(AccessControl).filter_by(repository_id=repo_id, user_id=current_user.id).first()
             role = access.role if access else "guest"  # guest for public view-only access
@@ -401,7 +400,7 @@ def get_user_role(
 
     # If user is the owner
     if repo.owner_id == current_user.id:
-        return {"role": "owner"}
+        return {"role": "admin"}
 
     # If repo is private, check access
     if repo.visibility == "private":
@@ -577,3 +576,105 @@ def get_user_log(user_id: int, db: Session = Depends(get_db)):
         }
         for log, username in logs
     ]
+
+@router.get("/my_snapshots")
+def list_user_snapshots(current_user=Depends(get_current_user)):
+    base_path = Path(f"D:/VCS_Storage/user_{current_user.id}")
+    if not base_path.exists():
+        return []
+
+    snapshots = []
+    for item in base_path.glob("*.zip"):
+        stat = item.stat()
+        try:
+            name_part, id_part, _ = item.stem.split("__", 2)
+            original_repo_name = name_part
+            original_repo_id = int(id_part)
+        except Exception:
+            original_repo_name = "Unknown"
+            original_repo_id = None
+
+        snapshots.append({
+            "filename": item.name,
+            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+            "created_at": time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(stat.st_ctime)),
+            "original_repo_name": original_repo_name,
+            "original_repo_id": original_repo_id
+        })
+
+    return snapshots
+
+class RestoreSnapshotRequest(BaseModel):
+    snapshot_name: str
+    new_repo_name: str
+
+@router.post("/my_snapshots/restore")
+def restore_snapshot_from_zip(
+    data: RestoreSnapshotRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user)
+):
+    snapshot_name = data.snapshot_name
+    new_repo_name = data.new_repo_name
+
+    print("Restoring:", snapshot_name, "as", new_repo_name)
+
+    user_folder = f"D:/VCS_Storage/user_{current_user.id}"
+    snapshot_path = os.path.join(user_folder, snapshot_name)
+
+    if not os.path.exists(snapshot_path):
+        raise HTTPException(status_code=404, detail="Snapshot not found.")
+
+    # Auto-incremented ID, so don't set repo.id manually
+    new_repo = Repository(
+        name=new_repo_name,
+        description=f"Restored from snapshot {snapshot_name}",
+        owner_id=current_user.id,
+        created_at=datetime.utcnow(),
+        visibility="private"
+    )
+    db.add(new_repo)
+    db.commit()
+    db.refresh(new_repo)  # Get assigned ID
+
+    # Extract the zip to user folder
+    new_repo_path = os.path.join(user_folder, f"repo_{new_repo.id}")
+    try:
+        with zipfile.ZipFile(snapshot_path, 'r') as zip_ref:
+            zip_ref.extractall(new_repo_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to extract snapshot: {e}")
+
+    # Add access_control entry as admin
+    access_entry = AccessControl(
+        user_id=current_user.id,
+        repository_id=new_repo.id,
+        role="admin"
+    )
+    db.add(access_entry)
+    db.commit()
+
+    return {
+        "detail": "Snapshot restored",
+        "new_repo_id": new_repo.id,
+        "repo_name": new_repo_name
+    }
+from fastapi import Path as ApiPath 
+@router.delete("/my_snapshots/{snapshot_name}")
+def delete_snapshot_file(
+    snapshot_name: str = ApiPath(..., description="Snapshot filename"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user_folder = f"D:/VCS_Storage/user_{current_user.id}"
+    snapshot_path = os.path.join(user_folder, snapshot_name)
+
+    if not os.path.exists(snapshot_path):
+        raise HTTPException(status_code=404, detail="Snapshot file not found.")
+
+    try:
+        os.remove(snapshot_path)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete snapshot: {e}")
+
+    return {"detail": f"Snapshot '{snapshot_name}' deleted."}

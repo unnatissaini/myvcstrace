@@ -16,6 +16,7 @@ from server.constants.access_levels import ADMIN, WRITE
 from server.dependencies import get_current_user
 from server.models import AccessControl, Log
 from pydantic import BaseModel
+from uuid import uuid4
 router = APIRouter(
     prefix="/repositories",
     tags=["repositories"]
@@ -365,61 +366,65 @@ def update_access_control(
     return {"detail": "Access updated successfully"}
 
 
-
 @router.post("/{repo_id}/snapshot_repo")
 def snapshot_whole_repository(
     repo_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    # Step 1: Permission check
+    # Step 1: Verify access
+    repo = db.query(Repository).filter_by(id=repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="Repository not found")
+
     access = db.query(AccessControl).filter_by(user_id=current_user.id, repository_id=repo_id).first()
     if not access or access.role != "admin":
         raise HTTPException(status_code=403, detail="Only admins can snapshot the full repo.")
 
-    # Step 2: Define source and zip file path
-    repo_folder = f"D:/VCS_Storage/user_{current_user.id}"
-    if not os.path.exists(repo_folder):
+    # Step 2: Define paths
+    repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo.id}"
+    if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repository folder not found.")
 
-    snapshot_filename = f"{uuid.uuid4()}_full_repo_snapshot.zip"
-    zip_path = os.path.join(repo_folder, snapshot_filename)
+    # Use Option 3: embed repo name and id in zip
+    safe_repo_name = repo.name.replace(" ", "_").replace("/", "_")  # optional: sanitize
+    snapshot_filename = f"{safe_repo_name}__{repo.id}__{uuid4().hex}.zip"
+    zip_path = os.path.join(f"D:/VCS_Storage/user_{current_user.id}", snapshot_filename)
 
-    # Step 3: Create zip of the whole repository
+    # Step 3: Zip the repository
     with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-        for root, _, files in os.walk(repo_folder):
+        for root, _, files in os.walk(repo_path):
             for file in files:
-                if file != snapshot_filename:  # Avoid zipping itself
-                    file_path = os.path.join(root, file)
-                    arcname = os.path.relpath(file_path, repo_folder)
-                    zipf.write(file_path, arcname)
+                file_path = os.path.join(root, file)
+                arcname = os.path.relpath(file_path, repo_path)
+                zipf.write(file_path, arcname)
 
-    # Step 4: Compute file hash and size
+    # Step 4: Metadata
     content_hash = compute_file_hash(zip_path)
-    file_size = os.path.getsize(zip_path)
+    size = os.path.getsize(zip_path)
 
-    # Step 5: Save snapshot entry
+    # Step 5: Save in DB
     snapshot = Snapshot(
-        commit_id=None,  # No specific commit
+        commit_id=None,
         file_path=zip_path,
         content_hash=content_hash,
-        size=file_size,
+        size=size,
         created_at=datetime.utcnow(),
         is_deleted=False,
-        operation="add"
+        operation="repo_snapshot"
     )
     db.add(snapshot)
     db.commit()
     db.refresh(snapshot)
 
     return {
-        "detail": "Repository snapshot created.",
+        "detail": "Snapshot created.",
         "snapshot_id": snapshot.id,
-        "file": snapshot.file_path,
+        "file_name": snapshot_filename,
+        "repo": repo.name,
         "hash": snapshot.content_hash,
-        "size": snapshot.size
+        "size": size
     }
-
 
 @router.post("/{repo_id}/create_file")
 def create_new_file(
