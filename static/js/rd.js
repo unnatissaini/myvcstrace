@@ -23,7 +23,8 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(res => res.json())
       .then(data => {
         viewer.textContent = data.content || "(empty)";
-  
+
+        
         const editBtn = document.getElementById("edit-btn");
         if (editBtn) {
           editBtn.style.display = ["admin", "editor", "collaborator"].includes(currentRole)
@@ -470,7 +471,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const selectedFile = document.getElementById("restore-file-select").value;
     const token = localStorage.getItem("token");
   
-    fetch(`/repositories/${currentRepoId}/revert_deleted?filename=${encodeURIComponent(selectedFile)}`, {
+    fetch(`/repositories/${currentRepoId}/restore_file?filename=${encodeURIComponent(selectedFile)}`, {
       method: "POST",
       headers: { "Authorization": `Bearer ${token}` }
     })

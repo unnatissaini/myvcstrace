@@ -5,6 +5,8 @@ from docx import Document
 
 def extract_text_from_file(file_path: str) -> str:
     ext = os.path.splitext(file_path)[1].lower()
+    if os.path.getsize(file_path) == 0:
+        return""
     if ext == ".docx":
         from docx import Document
         doc = Document(file_path)

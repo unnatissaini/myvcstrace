@@ -255,10 +255,12 @@ def delete_file(
     db.commit()
 
     return {"detail": f"File moved to trash: {payload.file_path}"}
+from fastapi import Query
+
 @router.post("/{repo_id}/restore_file")
 def restore_file(
     repo_id: int,
-    payload: DeleteFileRequest = Body(...),
+    filename: str = Query(..., alias="filename"),
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
@@ -267,8 +269,8 @@ def restore_file(
         raise HTTPException(status_code=403, detail="Permission denied")
 
     repo_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
-    trash_path = os.path.join(repo_path, ".trash", payload.file_path)
-    original_path = os.path.join(repo_path, payload.file_path)
+    trash_path = os.path.join(repo_path, ".trash", filename)
+    original_path = os.path.join(repo_path, filename)
 
     if not os.path.exists(trash_path):
         raise HTTPException(status_code=404, detail="File not found in trash")
@@ -280,13 +282,13 @@ def restore_file(
         user_id=current_user.id,
         repo_id=repo_id,
         action="restore_file",
-        description=f"Restored file: {payload.file_path}",
+        description=f"Restored file: {filename}",
         timestamp=datetime.utcnow()
     )
     db.add(log)
     db.commit()
 
-    return {"detail": f"Restored: {payload.file_path}"}
+    return {"detail": f"Restored: {filename}"}
 
 @router.get("/{repo_id}/trash_files")
 def list_trashed_files(
@@ -361,6 +363,14 @@ def update_access_control(
             user_id=access.user_id,
             role=access.role
         ))
+    log = Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        action="update_access",
+        description=f"Changed access of user {access.user_id} to role '{access.role}'",
+        timestamp=datetime.utcnow()
+    )
+    db.add(log)
 
     db.commit()
     return {"detail": "Access updated successfully"}
@@ -449,6 +459,15 @@ def create_new_file(
     # Write content
     with open(file_path, "w", encoding="utf-8") as f:
         f.write(content or "")
+    log = Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        action="create_file",  # or "create_folder"
+        description=f"Created file: {filename}",  # or folder
+        timestamp=datetime.utcnow()
+    )
+    db.add(log)
+    db.commit()
 
     return {"message": "File created", "filename": filename}
 
@@ -466,6 +485,15 @@ def create_folder(
     repo_folder = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
     folder_path = os.path.join(repo_folder, filename)
     os.makedirs(folder_path, exist_ok=True)
+    log = Log(
+        user_id=current_user.id,
+        repo_id=repo_id,
+        action="create_folder",  # or "create_folder"
+        description=f"Created file: {filename}",  # or folder
+        timestamp=datetime.utcnow()
+    )
+    db.add(log)
+    db.commit()
 
     return {"message": "Folder created", "folder": filename}
 

@@ -74,6 +74,15 @@ def create_commit(
         db.add(commit)
         db.commit()
         db.refresh(commit)
+        log = Log(
+            user_id=current_user.id,
+            repo_id=repo_id,
+            action="create_commit",
+            description=f"Committed changes to {safe_rel_path}: {message}",
+            timestamp=datetime.utcnow()
+        )
+        db.add(log)
+        db.commit()
 
         return {
             "commit_id": commit.id,
@@ -525,7 +534,6 @@ def preview_commit(
     base_path = f"D:/VCS_Storage/user_{current_user.id}/repo_{repo_id}"
     full_path = os.path.join(base_path, commit.original_filename)
 
-    # 🧠 1. Reconstruct content
     if commit.diff_text:
         base_content = ""
         if os.path.exists(full_path):
@@ -540,6 +548,7 @@ def preview_commit(
         with open(commit.snapshot_path, "r", encoding="utf-8") as f:
             content = f.read()
     else:
+        content = "(No preview available for this commit)"
         raise HTTPException(status_code=404, detail="Nothing to preview")
 
     return {"content": content, "filename": commit.original_filename}
