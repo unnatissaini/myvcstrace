@@ -1,0 +1,309 @@
+/* Reset */
+* {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  body, html {
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    background: linear-gradient(135deg, #f3f4f6, #e1e6e8, #d1d9dd); /* Light gradient */
+    color: #333; /* Dark text for contrast */
+    display: flex;
+    flex-direction: row;
+    overflow-x: hidden;
+  }
+  
+  .repo-dashboard {
+    display: flex;
+    height: 100vh;
+    flex: 1;
+    overflow: hidden;
+  }
+  
+  .file-list-panel {
+    width: 250px;
+    background: #f4f4f4; /* Lighter background */
+    padding: 2rem;
+    color: #333; /* Darker text */
+    overflow-y: auto;
+    border-right: 1px solid #ddd; /* Lighter border */
+  }
+  
+  .file-list-panel h2 {
+    font-size: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+  
+  .file-list-panel ul {
+    list-style-type: none;
+  }
+  
+  .file-list-panel li {
+    margin: 0.5rem 0;
+  }
+  
+  .file-list-panel a {
+    color: #0056b3; /* Blue links */
+    text-decoration: none;
+  }
+  
+  .file-list-panel a:hover {
+    text-decoration: underline;
+  }
+  
+  .file-list-panel li.selected {
+    background-color: rgba(0, 123, 255, 0.2);
+    font-weight: bold;
+  }
+  
+  
+  /* Right Panel (Glassy Box for File Content) */
+  .file-viewer-panel {
+    flex-grow: 1;
+    display: flex; /* required */
+    flex-direction: column;
+    background: rgba(255, 255, 255, 0.7); /* Light glass effect */
+    border-radius: 20px;
+    padding: 2rem;
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1), 0 0 15px 2px rgba(130, 160, 210, 0.2);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    overflow: hidden;
+    transition: all 0.3s ease;
+  }
+  
+  .file-viewer-panel .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  
+  .file-viewer-panel .controls {
+    display: flex;
+    gap: 1rem;
+  }
+  
+  .file-viewer-panel button {
+    background: #0056b3; /* Light blue background */
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.3s ease;
+  }
+  
+  .file-viewer-panel button:hover {
+    background: #0056b3;
+  }
+  
+  #file-content {
+    flex: 1; /* allow it to grow */
+    width: 100%;
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #f4f4f4;
+    color: #333;
+    border: none;
+    border-radius: 10px;
+    font-family: monospace;
+    resize: none;
+    overflow-y: auto;
+  }
+  
+  
+  /* Sliding Panel for Actions (Upload, Commit, Revert) */
+  .sliding-panel {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 380px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95); /* Light sliding panel */
+    box-shadow: -5px 0 20px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(0, 0, 0, 0.1); /* Lighter border */
+    padding: 2rem;
+    color: #333;
+    overflow-y: auto;
+    transition: right 0.4s ease;
+    z-index: 10;
+  }
+  
+  .sliding-panel.open {
+    right: 0;
+  }
+  
+  .sliding-panel .close-btn {
+    align-self: flex-end;
+    background: transparent;
+    color: #0056b3; /* Blue color */
+    font-size: 1.4rem;
+    cursor: pointer;
+    border: none;
+    margin-bottom: 1rem;
+    font-weight: 700;
+  }
+  
+  .sliding-panel #panel-content {
+    color: #333; /* Dark text */
+  }
+  
+  /* Responsive Design */
+  @media (max-width: 768px) {
+    .repo-dashboard {
+      flex-direction: column;
+    }
+  
+    .file-list-panel {
+      width: 100%;
+      padding: 1rem;
+      border-right: none;
+    }
+  
+    .file-viewer-panel {
+      width: 100%;
+      padding: 1rem;
+    }
+  
+    .sliding-panel {
+      width: 100%;
+      height: 50vh;
+      bottom: 0;
+      right: -100%;
+    }
+  
+    .sliding-panel.open {
+      right: 0;
+    }
+  }
+  
+  
+  .folder {
+    font-weight: bold;
+    cursor: pointer;
+  }
+  
+  .folder > ul {
+    margin-left: 20px;
+  }
+  
+  .file {
+    cursor: pointer;
+    color: #0056b3; /* Blue color for files */
+  }
+  
+  .commit-list {
+    margin-left: 20px;
+    list-style-type: circle;
+  }
+  .commit-list li {
+    color: #333; /* Darker text for commits */
+  }
+  
+  .file > ul, .folder > ul {
+    margin-left: 20px;
+    list-style-type: circle;
+  }
+  
+  .file button {
+    margin-left: 5px;
+  }
+  
+  .controls button {
+    margin: 0 2px;
+    padding: 5px 10px;
+  }
+  
+  .file-view-box textarea {
+    flex:1;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-family: monospace;
+    font-size: 14px;
+    padding: 10px;
+  }
+
+  
+  button {
+    margin-right: 8px;
+    padding: 12px 24px;              /* increased from 6px 12px */
+    font-size: 16px;                 /* increased from default */
+    font-weight: 600;                /* bolder text */
+    border: none;
+    border-radius: 10px;             /* slightly larger radius */
+    background-color: rgba(0, 123, 255, 0.1);
+    color: #0056b3;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  
+  button:hover {
+    background-color: rgba(0, 123, 255, 0.2);
+  }
+  
+  #save-file-btn {
+    margin-top: 8px;
+    align-self: flex-end;
+  }
+  #save-file-btn {
+    position: sticky;
+    bottom: 10px;
+    background: #0056b3;
+    z-index: 1;
+  }
+  .toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 60px;
+  height: 28px;
+  margin-right: 10px;
+}
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.slider {
+  position: absolute;
+  cursor: pointer;
+  background-color: #ccc;
+  border-radius: 34px;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  transition: 0.4s;
+}
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 22px;
+  width: 22px;
+  left: 4px;
+  bottom: 3px;
+  background-color: white;
+  transition: 0.4s;
+  border-radius: 50%;
+}
+input:checked + .slider {
+  background-color: #4CAF50;
+}
+input:checked + .slider:before {
+  transform: translateX(26px);
+}
+#commit-toggle-container {
+  margin-top: 10px;
+  font-size: 14px;
+}
+#commit-toggle {
+  cursor: pointer;
+}

@@ -1,0 +1,35 @@
+<!-- /templates/superadmin_dashboard.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Superadmin Dashboard</title>
+  <link rel="stylesheet" href="/static/css/d_light.css" />
+  <script src="/static/js/superadmin.js" defer></script>
+
+</head>
+<body>
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>Superadmin</h2>
+    <div class="nav-item active" onclick="loadSection(this, 'overview')">Dashboard Overview</div>
+    <div class="nav-item" onclick="loadSection(this, 'users')">Users</div>
+    <div class="nav-item" onclick="loadSection(this, 'repositories')">Repositories</div>
+    <div class="nav-item" onclick="loadSection(this, 'logs')">Activity Logs</div>
+    <div class="nav-item" onclick="loadSection(this, 'reset_password')">Reset Password</div>
+    <div class="nav-item" onclick="loadSection(this, 'register')">Register</div>
+    <div class="nav-item" onclick="logout()">Logout</div>
+  </div>
+
+  <!-- Main content -->
+  <div class="main-content">
+    <div class="glassy-box" id="main-display">
+      <h2>Welcome, Superadmin </h2>
+      <p>Select a section from the left to begin monitoring your kingdom.</p>
+    </div>
+  </div>
+
+</body>
+</html>

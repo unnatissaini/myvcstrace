@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Repository Dashboard</title>
+  <link rel="stylesheet" href="/static/css/rd_light.css" />
+  <link rel="icon" href="/static/favicon.ico" />
+
+</head>
+
+<body data-repo-id="{{ repo_id }}">
+  <div class="repo-dashboard">
+    <!-- Left Panel: File List -->
+    <div class="file-list-panel">
+      <h2>{{ repo_name }}</h2>
+      <ul id="file-list">
+        
+      </ul>                  
+    </div>
+
+    <!-- Right Panel: Glassy Box for File Content and Controls -->
+    <div class="file-viewer-panel">
+      <div class="header">
+        <h2 id="file-name">Select a file</h2>
+        <div class="controls">
+          <button onclick="deleteFile()">Delete</button> 
+          <button onclick="mergeFile()">Merge</button>
+          <button onclick="triggerUpload()">Upload</button>
+          <button onclick="createFile()">New</button>
+          <button onclick="commit(false)">Commit</button>
+          <!--button onclick="commit(true)">Commit + Snapshot</button-->
+          <button onclick="revertFile()">Revert</button>
+          <button id="edit-btn" style="display:none;" onclick="startEditingFile()">Edit</button>
+          <button id="convert-btn" style="display:none;" onclick="showConvertOptions()">Convert</button>
+        </div>
+      </div>
+
+      <!-- Text area to show file content -->
+      <div id="file-content" class="file-view-box"></div>
+      
+
+    </div>
+  </div>
+
+  <!-- Upload input (hidden) -->
+  <input type="file" id="upload-input" style="display: none;" />
+
+  <!-- Sliding Panel for Actions (Upload, Commit, Revert) -->
+  <div class="sliding-panel" id="action-panel">
+    <button class="close-btn" onclick="closeActionPanel()">×</button>
+    <div id="panel-content">
+      <!-- Dynamic content for actions (e.g., commit details) will go here -->
+    </div>
+  </div>
+  <script src="/static/js/rd.js" ></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const repoId = document.body.getAttribute("data-repo-id");
+      if (window.loadFiles && repoId) {
+        loadFiles(repoId); 
+      } else {
+        console.error("loadFiles is not defined or repoId missing");
+      }
+    });
+  </script>
+</body>
+
+</html>

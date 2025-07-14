@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Login - MyVCS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="../static/css/login_light.css" />
+</head>
+<body>
+  <div class="login-container">
+    <div class="glassy-login-box">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <label for="username">Username:</label>
+        <input type="text" name="username" id="username" required />
+
+        <label for="password">Password:</label>
+        <input type="password" name="password" id="password" required />
+
+        <button type="submit">Login</button>
+      </form>
+
+      <p id="error" class="error-message"></p>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      const formData = new FormData(e.target);
+      const response = await fetch("/login", {
+        method: "POST",
+        body: formData
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        localStorage.setItem("token", data.access_token);
+        window.location.href = "/dashboard";
+      } else {
+        try {
+          const err = await response.json();
+          document.getElementById("error").innerText = err.detail || "Login failed.";
+        } catch (e) {
+          const errorText = await response.text();
+          document.getElementById("error").innerText = "Unexpected error: " + errorText.slice(0, 100);
+        }
+      }
+    });
+  </script>
+</body>
+</html>

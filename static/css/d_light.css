@@ -1,0 +1,475 @@
+/* Reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  body, html {
+    height: 100%;
+    background: linear-gradient(135deg, #f1f5f9, #e0e6ed, #c8d6e5); /* Light gradient */
+    display: flex;
+    color: #333; /* Dark text for contrast */
+    overflow-x: hidden;
+    width: 100%;
+  }
+  
+  /* Sidebar */
+
+  .sidebar {
+    width: 220px;
+    height: 100vh; /* Full screen height */
+    background: #f4f5f7;
+    display: flex;
+    flex-direction: column;
+    padding: 2rem 1rem;
+    gap: 1.5rem;
+    border-right: 1px solid #ddd;
+    user-select: none;
+    overflow-y: auto; /* Enable vertical scroll if content is long */
+  }
+  
+  .sidebar h2 {
+    font-weight: 700;
+    font-size: 1.5rem;
+    color: #4c6a92; /* Softer blue for heading */
+    margin-bottom: 2rem;
+  }
+  
+  .nav-item {
+    cursor: pointer;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    transition: background-color 0.3s ease;
+  }
+  
+  .nav-item:hover,
+  .nav-item.active {
+    background: rgba(0, 123, 255, 0.1); /* Light hover effect */
+  }
+  
+  /* Main content area */
+
+  .main-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;  
+  }
+  
+  /* Glassy box */
+  .glassy-box {
+    flex: 1;
+    width: 100%;
+    max-height: calc(100vh - 4rem);  /* adjust if there's a top bar/header */
+    background: rgba(255, 255, 255, 0.7);
+    border-radius: 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1),
+                0 0 15px 2px rgba(130, 160, 210, 0.2);
+    border: 1px solid rgba(130, 160, 210, 0.2);
+    padding: 2rem 3rem;
+    color: #333;
+    overflow-y: auto;  
+    position: relative;
+    transition: all 0.3s ease;
+    z-index: 1;
+  }
+  .glassy-box::-webkit-scrollbar {
+    width: 8px;
+  }
+  .glassy-box::-webkit-scrollbar-thumb {
+    background-color: rgba(0,0,0,0.2);
+    border-radius: 4px;
+  }
+  
+  
+  /* Create repo sliding panel */
+  .create-repo-panel,
+  .access-repo-panel {
+    position: fixed;
+    top: 0;
+    right: -400px;
+    width: 380px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.95); /* Light background */
+    box-shadow: -5px 0 20px rgba(0, 0, 0, 0.1);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-left: 1px solid rgba(0, 0, 0, 0.1); /* Lighter border */
+    padding: 2rem;
+    color: #333;
+    overflow-y: auto;
+    transition: right 0.4s ease;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+  }
+  
+  .create-repo-panel.open,
+  .access-repo-panel.open {
+    right: 0;
+  }
+  
+  .create-repo-panel h3,
+  .access-repo-panel h3 {
+    margin-bottom: 1rem;
+    color: #4c6a92; /* Softer blue for headings */
+  }
+  
+  .create-repo-panel label,
+  .access-repo-panel label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #5e6c75; /* Slightly darker text */
+  }
+  
+  .create-repo-panel input[type="text"],
+  .create-repo-panel select,
+  .create-repo-panel input[type="file"],
+  .access-repo-panel input[type="text"],
+  .access-repo-panel select,
+  .access-repo-panel input[type="file"] {
+    width: 100%;
+    margin-top: 0.3rem;
+    padding: 0.4rem 0.6rem;
+    border-radius: 6px;
+    border: none;
+    background: #e5e9f1; /* Light background for inputs */
+    color: #333; /* Dark text */
+    font-size: 1rem;
+  }
+  
+  .create-repo-panel button,
+  .access-repo-panel button {
+    margin-top: 1.5rem;
+    padding: 0.6rem;
+    background: #4c6a92; /* Soft blue background */
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    transition: background-color 0.3s ease;
+  }
+  
+  .create-repo-panel button:hover,
+  .access-repo-panel button:hover {
+    background: #3c5777; /* Darker blue on hover */
+  }
+  
+  .create-repo-panel .close-btn,
+  .access-repo-panel .close-btn {
+    align-self: flex-end;
+    background: transparent;
+    color: #4c6a92;
+    font-size: 1.4rem;
+    cursor: pointer;
+    border: none;
+    margin-bottom: 1rem;
+    font-weight: 700;
+  }
+  
+  /* Tables styling */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+    color: #333; /* Dark text */
+  }
+  
+  th, td {
+    padding: 0.7rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  }
+  
+  th {
+    background: rgba(0, 123, 255, 0.05);
+    color: #4c6a92;
+    font-weight: 700;
+  }
+  
+  button.action-btn {
+    background: #4c6a92;
+    border: none;
+    padding: 0.3rem 0.7rem;
+    margin-right: 0.3rem;
+    border-radius: 6px;
+    color: #fff;
+    cursor: pointer;
+    font-weight: 600;
+    transition: background-color 0.2s ease;
+  }
+  
+  button.action-btn:hover {
+    background: #3c5777;
+  }
+  
+  /* Lists */
+  ul#log-list {
+    margin-top: 1rem;
+    color: #333; /* Dark text */
+    list-style-type: disc;
+    padding-left: 1.5rem;
+    max-height: 380px;
+    overflow-y: auto;
+  }
+  
+  /* Responsive */
+  @media (max-width: 768px) {
+    body {
+      flex-direction: column;
+    }
+  
+    .sidebar {
+      width: 100%;
+      flex-direction: row;
+      justify-content: space-around;
+      padding: 1rem 0;
+      border-right: none;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+    }
+  
+    .nav-item {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+    }
+  
+    .main-content {
+      padding: 1rem;
+      justify-content: center;
+    }
+  
+    .glassy-box {
+      width: 95%;
+      min-height: 350px;
+      padding: 1.5rem;
+    }
+  
+    .create-repo-panel,
+    .access-repo-panel {
+      width: 100%;
+      height: 50vh;
+      bottom: 0;
+      right: -100%;
+      border-left: none;
+      border-top: 1px solid rgba(0, 0, 0, 0.1);
+      transition: right 0.3s ease, bottom 0.3s ease;
+    }
+  
+    .create-repo-panel.open,
+    .access-repo-panel.open {
+      right: 0;
+      bottom: 0;
+    }
+  }
+  
+  /* File view */
+  .repo-view {
+    margin-top: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  
+  .repo-view h3 {
+    color: #4c6a92; /* Softer blue for headings */
+    font-size: 1.4rem;
+    margin-bottom: 0.5rem;
+  }
+  
+  .repo-controls {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  
+  .repo-controls button {
+    background-color: #4c6a92;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+  }
+  
+  .repo-controls button:hover {
+    background-color: #3c5777;
+  }
+  
+  .file-list ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  
+  .file-list li {
+    cursor: pointer;
+    padding: 0.6rem 1rem;
+    background: rgba(0, 123, 255, 0.05);
+    border-radius: 6px;
+    margin-bottom: 0.4rem;
+    color: #333;
+    transition: background 0.2s ease;
+  }
+  
+  .file-list li:hover {
+    background: rgba(0, 123, 255, 0.1);
+  }
+  
+  .file-content {
+    background: rgba(255, 255, 255, 0.7);
+    padding: 1rem;
+    border-radius: 10px;
+    color: #333;
+    font-family: monospace;
+    white-space: pre-wrap;
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid rgba(0, 0, 0, 0.1);
+  }
+  
+  .repo-tooltip {
+    position: absolute;
+    background-color: rgba(51, 51, 51, 0.95);
+    color: #fff;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    pointer-events: none;
+    white-space: pre-wrap; /* Allow wrapping + preserve line breaks */
+    max-width: 300px;       /* Optional: constrain width */
+    word-break: break-word; /* Wrap long words */
+    z-index: 9999;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  }
+  
+  .panel-section {
+    margin-bottom: 2rem;
+    padding: 1rem 1.5rem;
+    background: rgba(255, 255, 255, 0.65);
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+  }
+  
+  .section-title {
+    font-size: 1.4rem;
+    color: #4c6a92;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  
+  .form-glass {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .form-glass label {
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: #4a4a4a;
+  }
+  
+  .form-glass input,
+  .form-glass select {
+    padding: 0.5rem 0.75rem;
+    border-radius: 8px;
+    border: none;
+    background: #e6ecf2;
+    font-size: 1rem;
+    color: #333;
+  }
+  
+  .form-glass button {
+    padding: 0.6rem;
+    background: #4c6a92;
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    transition: background-color 0.3s ease;
+    margin-top: 0.5rem;
+  }
+  
+  .form-glass button:hover {
+    background: #3c5777;
+  }
+  
+  .form-result {
+    margin-top: 1rem;
+    color: #1a3e72;
+    font-weight: 600;
+  }
+  #activity-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1rem;
+  }
+  
+  #activity-log-table th,
+  #activity-log-table td {
+    border: 1px solid #ccc;
+    padding: 0.6rem;
+    text-align: left;
+  }
+  
+  #activity-log-table th {
+    background-color: #e5e9f0;
+  }
+  
+  #activity-log-table tr:nth-child(even) {
+    background-color: #f6f8fa;
+  }
+  #log-list, #activity-table {
+    max-height: none;
+    overflow: visible;
+  }
+
+.suggestion-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  border: 1px solid #ccc;
+  max-height: 150px;
+  overflow-y: auto;
+  background: #fff;
+  position: absolute;
+  z-index: 10;
+  width: 80%;
+}
+
+.suggestion-list li {
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.suggestion-list li:hover {
+  background-color: #f0f0f0;
+}
+.glass-input {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  outline: none;
+}

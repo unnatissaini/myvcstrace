@@ -1,0 +1,99 @@
+/* Reset */
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  }
+  
+  body, html {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, #f1f5f9, #e0e6ed, #c8d6e5); /* Light gradient */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: #333; /* Dark text for readability */
+  }
+  
+  /* Login Container */
+  .login-container {
+    width: 100%;
+    max-width: 600px;
+    height: 100%;
+    max-height: 400px;
+    padding: 2rem;
+  }
+  
+  /* Glassy Login Box */
+  .glassy-login-box {
+    width: 100%;
+    max-width: 500px;
+    height: 100%;
+    max-height: 400px;
+    padding: 3rem;
+    background: rgba(255, 255, 255, 0.7); /* Lighter glass effect */
+    border-radius: 20px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    box-shadow:
+      0 8px 32px 0 rgba(0, 0, 0, 0.1),
+      0 0 15px 2px rgba(130, 160, 210, 0.2); /* Softer shadows */
+    border: 1px solid rgba(130, 160, 210, 0.2); /* Light border */
+    color: #333; /* Dark text for contrast */
+  }
+  
+  /* Heading */
+  .glassy-login-box h2 {
+    text-align: center;
+    margin-bottom: 1.5rem;
+    color: #4c6a92; /* Softer blue for heading */
+  }
+  
+  /* Form Labels */
+  label {
+    display: block;
+    margin-top: 1rem;
+    font-weight: 600;
+    color: #5e6c75; /* Slightly darker text */
+  }
+  
+  /* Input Fields */
+  input[type="text"],
+  input[type="password"] {
+    width: 100%;
+    margin-top: 0.4rem;
+    padding: 0.5rem;
+    border-radius: 6px;
+    border: none;
+    background: #e5e9f1; /* Light background for inputs */
+    color: #333; /* Dark text */
+    font-size: 1rem;
+  }
+  
+  /* Submit Button */
+  button[type="submit"] {
+    margin-top: 1.5rem;
+    width: 100%;
+    padding: 0.6rem;
+    background: #4c6a92; /* Soft blue for button */
+    border: none;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    color: #fff;
+    transition: background-color 0.3s ease;
+  }
+  
+  button[type="submit"]:hover {
+    background: #3c5777; /* Darker blue on hover */
+  }
+  
+  /* Error Message */
+  .error-message {
+    margin-top: 1rem;
+    text-align: center;
+    color: #e57373; /* Red for error */
+    font-weight: 600;
+  }
+  

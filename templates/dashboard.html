@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyVCS Dashboard</title>
+  <link rel="stylesheet" href="static\css\d_light.css">
+</head>
+<body>
+  <nav class="sidebar">
+    <h2>MyVCS</h2>
+    <div class="nav-item active" data-section="home">Home</div>
+    <div class="nav-item" data-section="report">Your Repos</div>
+    <div class="nav-item" data-section="public">Public</div>
+    <div class="nav-item" data-section="activity">Activity/History</div>
+    <div class="nav-item" data-section="snapshots">Snapshots</div> 
+    <div class="nav-item" id="logout-btn">Logout</div>
+  </nav>
+
+  <div class="main-content">
+    <section class="glassy-box" id="content-box">
+      <!-- Content loaded dynamically -->
+    </section>
+  
+
+    <aside class="create-repo-panel" id="create-repo-panel" aria-hidden="true" role="dialog">
+      <button class="close-btn" id="close-create-panel" aria-label="Close Create Repository Panel">&times;</button>
+      <h3>Create New Repository</h3>
+      <form id="create-repo-form">
+        <label for="repo-name">Repository Name:</label>
+        <input type="text" id="repo-name" name="name" required />
+
+        <label for="repo-visibility">Visibility:</label>
+        <select id="repo-visibility" name="visibility">
+          <option value="public">Public</option>
+          <option value="private">Private</option>
+        </select>
+        <label for="repo-description">Description (optional):</label>
+        <input type="text" id="repo-description" name="description" />
+
+        <label for="repo-file">Upload Initial File:</label>
+        <input type="file" id="repo-file" name="file" />
+
+        <button type="submit">Create Repository</button>
+      </form>
+    </aside>
+    <aside class="create-repo-panel" id="access-repo-panel" aria-hidden="true" role="dialog">
+      <button class="close-btn" id="close-access-panel" aria-label="Close Access Panel">&times;</button>
+      <h3>Manage Access</h3>
+      <form id="access-form">
+        <label for="user-search">User</label>
+        <input type="text" id="user-search" name="user_id" autocomplete="off" placeholder="Type username or ID" required />
+        <ul id="user-suggestions" class="suggestion-list"></ul>
+        <select name="role">
+          <option value="viewer">Viewer</option>
+          <option value="editor">Collaborator</option>
+          <option value="admin">Admin</option>
+        </select>
+        <button type="submit">Update</button>
+      </form>
+    </aside>
+  </div>
+  
+  <script src="/static/js/dashboard.js"></script>
+</body>
+</html>

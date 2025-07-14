@@ -1,0 +1,110 @@
+<style>
+  .selection-list {
+  list-style: none;
+  padding: 0;
+  max-height: 200px;
+  overflow-y: auto;
+}
+.selection-list li {
+  cursor: pointer;
+  padding: 0.5rem;
+  background: rgba(255,255,255,0.05);
+  margin-bottom: 0.2rem;
+  border-radius: 5px;
+  transition: background 0.3s;
+}
+.selection-list li:hover,
+.selection-list li.active {
+  background: rgba(255,255,255,0.15);
+  color: #81a1c1;
+}
+
+</style>
+<h2>Activity Logs</h2>
+
+<div style="display: flex; gap: 2rem; margin-bottom: 1rem;">
+  <div style="flex: 1;">
+    <h3>Users</h3>
+    <ul id="user-list" class="selection-list"></ul>
+  </div>
+  <div style="flex: 1;">
+    <h3>Repositories</h3>
+    <ul id="repo-list" class="selection-list"></ul>
+  </div>
+</div>
+
+<h3 id="log-title">Logs</h3>
+<table>
+  <thead>
+    <tr>
+      <th>User</th>
+      <th>Repository</th>
+      <th>Action</th>
+      <th>Timestamp</th>
+    </tr>
+  </thead>
+  <tbody id="log-table-body">
+    <tr><td colspan="4">Select a user or repository above.</td></tr>
+  </tbody>
+</table>
+
+<script>
+async function fetchLogs() {
+  const res = await fetch("/api/superadmin/logs");
+  const data = await res.json();
+  const body = document.getElementById("log-table-body");
+  body.innerHTML = "";
+  for (const log of data) {
+    const row = document.createElement("tr");
+
+    const user = `${log.username} (${log.user_id})`;
+    const repo = `${log.repo_name} (${log.repo_id})`;
+    const commit = log.commit_id !== null ? log.commit_id : "-";
+
+    row.innerHTML = `
+      <td>${log.id}</td>
+      <td><a href="#" onclick="viewUserLogs(${log.user_id})">${user}</a></td>
+      <td><a href="#" onclick="viewRepoLogs(${log.repo_id})">${repo}</a></td>
+      <td>${log.action}</td>
+      <td>${commit}</td>
+      <td>${new Date(log.timestamp).toLocaleString()}</td>
+    `;
+    body.appendChild(row);
+  }
+}
+
+function viewUserLogs(userId) {
+  fetch(`/api/superadmin/logs?user_id=${userId}`)
+    .then(res => res.json())
+    .then(updateLogTable);
+}
+
+function viewRepoLogs(repoId) {
+  fetch(`/api/superadmin/logs?repo_id=${repoId}`)
+    .then(res => res.json())
+    .then(updateLogTable);
+}
+
+function updateLogTable(data) {
+  const body = document.getElementById("log-table-body");
+  body.innerHTML = "";
+  for (const log of data) {
+    const row = document.createElement("tr");
+    const user = `${log.username} (${log.user_id})`;
+    const repo = `${log.repo_name} (${log.repo_id})`;
+    const commit = log.commit_id !== null ? log.commit_id : "-";
+    row.innerHTML = `
+      <td>${log.id}</td>
+      <td><a href="#" onclick="viewUserLogs(${log.user_id})">${user}</a></td>
+      <td><a href="#" onclick="viewRepoLogs(${log.repo_id})">${repo}</a></td>
+      <td>${log.action}</td>
+      <td>${commit}</td>
+      <td>${new Date(log.timestamp).toLocaleString()}</td>
+    `;
+    body.appendChild(row);
+  }
+}
+
+document.addEventListener("DOMContentLoaded", fetchLogs);
+</script>
+
